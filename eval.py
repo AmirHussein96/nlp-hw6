@@ -7,12 +7,14 @@ from pathlib import Path
 from math import nan, exp
 from typing import Counter, Tuple, Optional
 
+
 import torch
 from tqdm import tqdm
 
 from corpus import Sentence, Word, EOS_WORD, BOS_WORD, OOV_WORD, TaggedCorpus, desupervise, sentence_str
 from hmm import HiddenMarkovModel
 from integerize import Integerizer
+import pdb
 
 def model_cross_entropy(model: HiddenMarkovModel,
                         eval_corpus: TaggedCorpus) -> float:
@@ -20,6 +22,7 @@ def model_cross_entropy(model: HiddenMarkovModel,
     That corpus may be either supervised or unsupervised.
     Warning: Return value is in nats, not bits."""
     with torch.no_grad():
+        #pdb.set_trace()
         log_prob = 0.0
         token_count = 0
         for gold in tqdm(eval_corpus.get_sentences()):
