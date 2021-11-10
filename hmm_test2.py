@@ -8,17 +8,19 @@ import logging
 from math import inf, log, exp, sqrt
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, cast
-from logsumexp_safe import logsumexp_new
-import numpy as np
+import pdb
 import torch
 from torch import Tensor, nn, tensor
 from torch.nn import functional as F
 from tqdm import tqdm
-#from scipy.special import logsumexp
+
 from corpus import (BOS_TAG, BOS_WORD, EOS_TAG, EOS_WORD, Sentence, Tag,
                     TaggedCorpus, Word)
 from integerize import Integerizer
-import pdb
+
+from collections import deque
+from logsumexp_safe import logsumexp_new
+
 # Set the seed for random numbers in torch, for replicability
 torch.manual_seed(1337)
 torch.cuda.manual_seed(69_420)  # No-op if CUDA isn't available
@@ -123,10 +125,11 @@ class HiddenMarkovModel(nn.Module):
             l2 = l2 + x_finite @ x_finite   # add ||x_finite||^2
         return l2
 
+
     def updateAB(self) -> None:
         """Set the transition and emission matrices A and B, based on the current parameters.
         See the "Parametrization" section of the reading handout."""
-       # pdb.set_trace()
+        
         A = F.softmax(self._WA, dim=1)       # run softmax on params to get transition distributions
                                              # note that the BOS_TAG column will be 0, but each row will sum to 1
         if self.unigram:
@@ -183,45 +186,42 @@ class HiddenMarkovModel(nn.Module):
         The corpus from which this sentence was drawn is also passed in as an
         argument, to help with integerization and check that we're 
         integerizing correctly."""
-        
+
         sent = self._integerize_sentence(sentence, corpus)
 
         # The "nice" way to construct alpha is by appending to a List[Tensor] at each
         # step.  But to better match the notation in the handout, we'll instead preallocate
         # a list of length n+2 so that we can assign directly to alpha[j].
-        # #pdb.set_trace()
-        # alpha = [1e-45*torch.ones(self.k) for _ in sent]  # very small values close to 0
-        # #alpha = [torch.empty(self.k) for _ in sent]   
-        # alpha[0][sent[0][1]]=1
-        # for j in range(len(sentence)-2):
-        #     # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
-        #     alpha[j+1] =  torch.matmul(alpha[j],self.A) + self.B[:,sent[j+1][0]]
         #pdb.set_trace()
-        # return torch.logsumexp(alpha[-2],0)
+        alpha = [torch.empty(self.k).fill_(-inf) for _ in sent]
 
-        alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
-        #alpha = [1e-45+torch.zeros(self.k) for _ in sent] # initialize to large negative number
-        #alpha = [torch.ones(self.k) for _ in sent]
-        #alpha = [torch.empty(self.k) for _ in sent]   
-        alpha[0][self.bos_t]=0  # handling the first 
-        for j in range(1,len(sentence)-1):
-            # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
-            wi, ti = sent[j]
-            #pdb.set_trace()
-            if ti == None:
-                x = alpha[j-1] + torch.log(self.A +1e-45)  
-                alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi]+1e-45), dim=0, keepdim=False, safe_inf=True) 
+        _WB = self._ThetaB @ self._E.t()
+        log_B = _WB - torch.unsqueeze(logsumexp_new(_WB, dim=1, safe_inf=True),1)
+        log_A = self._WA - torch.unsqueeze(logsumexp_new(self._WA, dim=1, safe_inf=True),1)
+
+        # TODO: don't guess when you know
+        # self.B[self.eos_t, :] = -inf
+        # self.B[self.bos_t, :] = -inf
+
+        alpha[0][self.bos_t] = 0.
+
+        for pos in range(1,len(sent)-1):
+            widx, tidx = sent[pos]
+
+            if tidx == None:
+                a = torch.unsqueeze(alpha[pos-1],1)
+                transition = log_A
+                emission = torch.unsqueeze(log_B[:,widx],0)
+                alpha[pos] = logsumexp_new(a + transition + emission, dim=0, safe_inf=True)
             else:
-                #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
-                x = alpha[j-1] + torch.log(self.A[:,ti]+1e-45) 
-                alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]+1e-45), dim=0, keepdim=False, safe_inf=True) 
+                a = alpha[pos-1]
+                transition = log_A[:,tidx]
+                emission = torch.unsqueeze(log_B[tidx,widx],0)
+                alpha[pos][tidx] = logsumexp_new(a + transition + emission, dim=0, safe_inf=True)
 
-           # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
-        #pdb.set_trace()  
-        # handeling the last tag 
-        alpha[-1][self.eos_t]= logsumexp_new(alpha[-2]+ self.A[:,self.eos_t],dim=0, keepdim=False, safe_inf=True)
-        return alpha[-1][self.eos_t] # Z
-        #raise NotImplementedError   # you fill this in!
+        alpha[-1][self.eos_t] = logsumexp_new(alpha[-2] + log_A[:,self.eos_t], dim=0, safe_inf=True)
+
+        return alpha[-1][self.eos_t] # log marginal prob
 
     def viterbi_tagging(self, sentence: Sentence, corpus: TaggedCorpus) -> Sentence:
         """Find the most probable tagging for the given sentence, according to the
@@ -233,7 +233,40 @@ class HiddenMarkovModel(nn.Module):
 
         sent = self._integerize_sentence(sentence, corpus)
 
-        raise NotImplementedError   # you fill this in!
+        alpha = [torch.empty(self.k).fill_(-inf) for _ in sent]
+        backpointer = [torch.empty(self.k) for _ in sent]
+
+        _WB = self._ThetaB @ self._E.t()
+        log_B = _WB - torch.unsqueeze(logsumexp_new(_WB, dim=1, safe_inf=True),1)
+        log_A = self._WA - torch.unsqueeze(logsumexp_new(self._WA, dim=1, safe_inf=True),1)
+
+        alpha[0][self.bos_t] = 0.
+
+        for pos in range(1,len(sent)-1):
+            widx, tidx = sent[pos]
+
+            a = torch.unsqueeze(alpha[pos-1],1)
+            emission = torch.unsqueeze(log_B[:,widx],0)
+
+            intmed = torch.max(a + log_A + emission, 0)
+
+            alpha[pos] = intmed[0]
+            backpointer[pos] = intmed[1]
+        
+        a = torch.unsqueeze(alpha[-2],1)
+        intmed = torch.max(a + log_A, 0)
+        alpha[-1] = intmed[0]
+        backpointer[-1] = intmed[1]
+
+        prev = self.eos_t
+        viterbi_path = deque([])
+        for pos in range(len(sent)-1,-1,-1):
+            word = self.vocab[sent[pos][0]]
+            tag = self.tagset[prev]
+            viterbi_path.appendleft((word, tag))
+            prev = backpointer[pos][prev]
+
+        return list(viterbi_path)
 
     def train(self, 
               corpus: TaggedCorpus,
@@ -281,10 +314,7 @@ class HiddenMarkovModel(nn.Module):
 
             # m is the number of examples we've seen so far.
             # If we're at the end of a minibatch, do an update.
-            #pdb.set_trace()
-            
             if m % minibatch_size == 0 and m > 0:
-               # input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 optimizer.zero_grad()          # backward pass will add to existing gradient, so zero it
                 objective = -log_likelihood + (minibatch_size/corpus.num_tokens()) * reg * self.params_L2()
@@ -293,25 +323,18 @@ class HiddenMarkovModel(nn.Module):
                 logging.debug(f"Size of gradient vector: {length}")  # should approach 0 for large minibatch at local min
                 optimizer.step()               # SGD step
                 self.updateAB()                # update A and B matrices from new params
-               # self.printAB()
                 log_likelihood = tensor(0.0, device=self.device)    # reset accumulator for next minibatch
-
+                self.printAB()
             # If we're at the end of an eval batch, or at the start of training, evaluate.
             if m % evalbatch_size == 0:
                 with torch.no_grad():       # don't retain gradients during evaluation
-                    #pdb.set_trace() 
                     dev_loss = loss(self)   # this will print its own log messages
-                    
-                   
                 if old_dev_loss is not None and dev_loss >= old_dev_loss * (1-tolerance):
-               # if old_dev_loss is not None and dev_loss >= old_dev_loss:
                     # we haven't gotten much better, so stop
                     self.save(save_path)  # Store this model, in case we'd like to restore it later.
                     break
                 old_dev_loss = dev_loss            # remember for next eval batch
-                #print(old_dev_loss * (1-tolerance))
                 self.printAB()
-                
             # Finally, add likelihood of sentence m to the minibatch objective.
             log_likelihood = log_likelihood + self.log_prob(sentence, corpus)
 
