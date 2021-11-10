@@ -8,7 +8,7 @@ import logging
 from math import inf, log, exp, sqrt
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple, cast
-#import logsumexp_safe
+import logsumexp_safe
 import numpy as np
 import torch
 from torch import Tensor, nn, tensor
@@ -196,21 +196,26 @@ class HiddenMarkovModel(nn.Module):
         # for j in range(len(sentence)-2):
         #     # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
         #     alpha[j+1] =  torch.matmul(alpha[j],self.A) + self.B[:,sent[j+1][0]]
-       # pdb.set_trace()
+        #pdb.set_trace()
         # return torch.logsumexp(alpha[-2],0)
 
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
+        #alpha = [1e-45+torch.zeros(self.k) for _ in sent] # initialize to large negative number
         #alpha = [torch.ones(self.k) for _ in sent]
         #alpha = [torch.empty(self.k) for _ in sent]   
         alpha[0][sent[0][1]]=0
         for j in range(1,len(sentence)-1):
             # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             pdb.set_trace()
-            alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
-            #alpha[j+1][0:4] =  torch.logsumexp(alpha[j].repeat(4,1).T + self.A[:,0:4] + self.B[:,sent[j+1][0]].repeat(4,1).T, 0)
-       # pdb.set_trace()   
-        alpha[-1][2]=torch.logsumexp(alpha[-2],0)
+            #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
+            x = alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]+1e-45) 
+            alpha[j] = x.logsumexp(dim=0, keepdim=False, safe_inf=True) + torch.log(self.B[:,sent[j][0]]+1e-45)
 
+           # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
+        #pdb.set_trace()   
+        #alpha[-1][2]=torch.logsumexp(alpha[-2] + self.A[:,3],0)
+        #alpha[-1][2]=torch.logsumexp(alpha[-2],0)
+        alpha[-1][2]=(alpha[-2]+ self.A[:,3]).logsumexp(dim=0, keepdim=False, safe_inf=True)
         return alpha[-1][2] # Z
         #raise NotImplementedError   # you fill this in!
 
@@ -273,7 +278,9 @@ class HiddenMarkovModel(nn.Module):
             # m is the number of examples we've seen so far.
             # If we're at the end of a minibatch, do an update.
             #pdb.set_trace()
+            
             if m % minibatch_size == 0 and m > 0:
+               # input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 optimizer.zero_grad()          # backward pass will add to existing gradient, so zero it
                 objective = -log_likelihood + (minibatch_size/corpus.num_tokens()) * reg * self.params_L2()
@@ -300,6 +307,7 @@ class HiddenMarkovModel(nn.Module):
                 old_dev_loss = dev_loss            # remember for next eval batch
                 #print(old_dev_loss * (1-tolerance))
                 self.printAB()
+                
             # Finally, add likelihood of sentence m to the minibatch objective.
             log_likelihood = log_likelihood + self.log_prob(sentence, corpus)
 

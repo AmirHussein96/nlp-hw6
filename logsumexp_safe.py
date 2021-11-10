@@ -33,6 +33,7 @@
 
 import torch
 from typing import Union, Tuple
+import pdb
 Dim = Union[int, Tuple[int]]   # probably need more branches to this union to be fully general
 
 # Custom PyTorch functions.
@@ -153,6 +154,7 @@ if __name__ == "__main__":
                           f"\t∂d/∂a={aa.grad.item()}\t∂d/∂b={bb.grad.item()}")
     
     # Some examples with tensorized logsumexp
+    pdb.set_trace()
     t = torch.tensor([[  2.,   3., -inf, -inf], 
                       [  5.,   7., -inf, -inf],
                       [-inf, -inf, -inf, -inf]], requires_grad=True)

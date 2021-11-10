@@ -34,7 +34,7 @@ hmm.printAB()
 logging.info("*** Supervised training on icsup")
 cross_entropy_loss = lambda model: model_cross_entropy(model, icsup)
 hmm.train(corpus=icsup, loss=cross_entropy_loss, 
-          minibatch_size=10, evalbatch_size=500, lr=0.01, tolerance=0.1)
+          minibatch_size=10, evalbatch_size=500, lr=0.01, tolerance=0.0001)
 
 logging.info("*** A, B matrices after training on icsup (should approximately match initial params on spreadsheet [transposed])")
 hmm.printAB()
