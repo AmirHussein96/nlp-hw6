@@ -7,7 +7,6 @@ from pathlib import Path
 from math import nan, exp
 from typing import Counter, Tuple, Optional
 
-
 import torch
 from tqdm import tqdm
 
@@ -22,7 +21,6 @@ def model_cross_entropy(model: HiddenMarkovModel,
     That corpus may be either supervised or unsupervised.
     Warning: Return value is in nats, not bits."""
     with torch.no_grad():
-        #pdb.set_trace()
         log_prob = 0.0
         token_count = 0
         for gold in tqdm(eval_corpus.get_sentences()):
@@ -94,5 +92,6 @@ def tagger_write_output(model: HiddenMarkovModel,
                         output_path: Path) -> None:
     with open(output_path, 'w') as f:
         for gold in tqdm(eval_corpus.get_sentences()):
+            
             predicted = model.viterbi_tagging(desupervise(gold), eval_corpus)
             f.write(sentence_str(predicted)+"\n")

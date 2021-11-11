@@ -11,6 +11,7 @@ from typing import Callable, List, Optional, Tuple, cast
 from logsumexp_safe import logsumexp_new
 import numpy as np
 import torch
+from collections import defaultdict
 from torch import Tensor, nn, tensor
 from torch.nn import functional as F
 from tqdm import tqdm
@@ -189,32 +190,22 @@ class HiddenMarkovModel(nn.Module):
         # The "nice" way to construct alpha is by appending to a List[Tensor] at each
         # step.  But to better match the notation in the handout, we'll instead preallocate
         # a list of length n+2 so that we can assign directly to alpha[j].
-        # #pdb.set_trace()
-        # alpha = [1e-45*torch.ones(self.k) for _ in sent]  # very small values close to 0
-        # #alpha = [torch.empty(self.k) for _ in sent]   
-        # alpha[0][sent[0][1]]=1
-        # for j in range(len(sentence)-2):
-        #     # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
-        #     alpha[j+1] =  torch.matmul(alpha[j],self.A) + self.B[:,sent[j+1][0]]
-        #pdb.set_trace()
-        # return torch.logsumexp(alpha[-2],0)
 
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
-        #alpha = [1e-45+torch.zeros(self.k) for _ in sent] # initialize to large negative number
-        #alpha = [torch.ones(self.k) for _ in sent]
-        #alpha = [torch.empty(self.k) for _ in sent]   
-        alpha[0][self.bos_t]=0  # handling the first 
+        self.A = self.A +1e-45
+        self.B = self.B +1e-45
+        alpha[0][self.bos_t] = 0  # handling the first 
         for j in range(1,len(sentence)-1):
             # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
             #pdb.set_trace()
             if ti == None:
-                x = alpha[j-1] + torch.log(self.A +1e-45)  
-                alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi]+1e-45), dim=0, keepdim=False, safe_inf=True) 
+                x = alpha[j-1].reshape(-1,1) + torch.log(self.A )  
+                alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(-1,1)), dim=0, keepdim=False, safe_inf=True) 
             else:
                 #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
                 x = alpha[j-1] + torch.log(self.A[:,ti]+1e-45) 
-                alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]+1e-45), dim=0, keepdim=False, safe_inf=True) 
+                alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]), dim=0, keepdim=False, safe_inf=True) 
 
            # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
         #pdb.set_trace()  
@@ -233,7 +224,40 @@ class HiddenMarkovModel(nn.Module):
 
         sent = self._integerize_sentence(sentence, corpus)
 
-        raise NotImplementedError   # you fill this in!
+        alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
+        backpointer={}
+        alpha[0][self.bos_t]=0  # handling the first 
+        backpointer[0]= alpha[0]
+        self.B = self.B+1e-45
+        self.A = self.A+1e-45
+        for j in range(1,len(sentence)-1):
+            # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
+            wi, ti = sent[j]
+            #pdb.set_trace()
+            
+            x = alpha[j-1].reshape(-1,1) + torch.log(self.A)  
+            max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(-1,1),0) 
+            alpha[j] = max_mat[0]   # alpha values
+            backpointer[j] = max_mat[1]
+        # handeling the last tag
+        #pdb.set_trace()
+        max_mat = torch.max(alpha[-2].reshape(-1,1)+ torch.log(self.A), 0)
+        alpha[-1] = max_mat[0]
+        backpointer[j+1] = max_mat[1]
+        print(backpointer)
+        prev_t = self.eos_t
+        seq = []
+        for i in range(len(sentence)-1,-1,-1):
+            word = self.vocab[sent[i][0]]
+            tag = self.tagset[prev_t]
+            print(tag)
+            prev_t = backpointer[i][prev_t].item()
+            print(prev_t)
+            seq.append((word,tag))
+        return seq
+            
+    
+
 
     def train(self, 
               corpus: TaggedCorpus,
@@ -310,7 +334,7 @@ class HiddenMarkovModel(nn.Module):
                     break
                 old_dev_loss = dev_loss            # remember for next eval batch
                 #print(old_dev_loss * (1-tolerance))
-                self.printAB()
+                #self.printAB()
                 
             # Finally, add likelihood of sentence m to the minibatch objective.
             log_likelihood = log_likelihood + self.log_prob(sentence, corpus)
