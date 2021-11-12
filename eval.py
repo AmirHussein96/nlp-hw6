@@ -69,7 +69,8 @@ def eval_tagging(predicted: Sentence,
     # print(predicted)
     # print(gold)
     for ((word, tag), (goldword, goldtag)) in zip(predicted, gold):
-        #print(word, goldword)
+       # print(word, goldword)
+        #pdb.set_trace()
         assert word == goldword   # sentences being compared should have the same words!
         if word is BOS_WORD or word is EOS_WORD:  # not fair to get credit for these
             continue

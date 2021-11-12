@@ -17,14 +17,14 @@ logging.basicConfig(format="%(levelname)s : %(message)s", level=logging.INFO)  #
 # torch.autograd.set_detect_anomaly(True)    # uncomment to improve error messages from .backward(), but slows down
 
 # Get the corpora
-entrain = TaggedCorpus(Path("ensup"), Path("enraw"))                               # all training
-ensup =   TaggedCorpus(Path("ensup"), tagset=entrain.tagset, vocab=entrain.vocab)  # supervised training
-endev =   TaggedCorpus(Path("endev"), tagset=entrain.tagset, vocab=entrain.vocab)  # evaluation
+entrain = TaggedCorpus(Path("../nlp6-data/ensup"), Path("../nlp6-data/enraw"))                               # all training
+ensup =   TaggedCorpus(Path("../nlp6-data/ensup"), tagset=entrain.tagset, vocab=entrain.vocab)  # supervised training
+endev =   TaggedCorpus(Path("../nlp6-data/endev"), tagset=entrain.tagset, vocab=entrain.vocab)  # evaluation
 logging.info(f"Tagset: f{list(entrain.tagset)}")
-known_vocab = TaggedCorpus(Path("ensup")).vocab    # words seen with supervised tags; used in evaluation
+known_vocab = TaggedCorpus(Path("../nlp6-data/ensup")).vocab    # words seen with supervised tags; used in evaluation
 
 # Initialize an HMM
-lexicon = build_lexicon(entrain, embeddings_file=Path('words-50.txt'))  # works better with more attributes!
+lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
 hmm = HiddenMarkovModel(entrain.tagset, entrain.vocab, lexicon)
 
 # Let's initialize with supervised training to approximately maximize the

@@ -204,7 +204,7 @@ class HiddenMarkovModel(nn.Module):
                 alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(-1,1)), dim=0, keepdim=False, safe_inf=True) 
             else:
                 #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
-                x = alpha[j-1] + torch.log(self.A[:,ti]+1e-45) 
+                x = alpha[j-1] + torch.log(self.A[:,ti]) 
                 alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]), dim=0, keepdim=False, safe_inf=True) 
 
            # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
@@ -244,16 +244,15 @@ class HiddenMarkovModel(nn.Module):
         max_mat = torch.max(alpha[-2].reshape(-1,1)+ torch.log(self.A), 0)
         alpha[-1] = max_mat[0]
         backpointer[j+1] = max_mat[1]
-        print(backpointer)
         prev_t = self.eos_t
         seq = []
         for i in range(len(sentence)-1,-1,-1):
             word = self.vocab[sent[i][0]]
             tag = self.tagset[prev_t]
-            print(tag)
+           
             prev_t = backpointer[i][prev_t].item()
-            print(prev_t)
             seq.append((word,tag))
+        seq.reverse()
         return seq
             
     
