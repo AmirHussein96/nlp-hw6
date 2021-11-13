@@ -7,11 +7,11 @@ from __future__ import annotations
 import logging
 from math import inf, log, exp, sqrt
 from pathlib import Path
+from collections import deque, defaultdict
 from typing import Callable, List, Optional, Tuple, cast
 from logsumexp_safe import logsumexp_new
 import numpy as np
 import torch
-from collections import defaultdict
 from torch import Tensor, nn, tensor
 from torch.nn import functional as F
 from tqdm import tqdm
@@ -147,6 +147,8 @@ class HiddenMarkovModel(nn.Module):
         self.B = B.clone()
         self.B[self.eos_t, :] = 0        # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
         self.B[self.bos_t, :] = 0        # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
+        self.B = self.B + 1e-45
+        self.A = self.A + 1e-45
 
 
     def printAB(self):
@@ -192,8 +194,6 @@ class HiddenMarkovModel(nn.Module):
         # a list of length n+2 so that we can assign directly to alpha[j].
 
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
-        self.A = self.A +1e-45
-        self.B = self.B +1e-45
         alpha[0][self.bos_t] = 0  # handling the first 
         for j in range(1,len(sentence)-1):
             # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
@@ -224,36 +224,33 @@ class HiddenMarkovModel(nn.Module):
 
         sent = self._integerize_sentence(sentence, corpus)
 
-        alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
-        backpointer={}
-        alpha[0][self.bos_t]=0  # handling the first 
-        backpointer[0]= alpha[0]
-        self.B = self.B+1e-45
-        self.A = self.A+1e-45
+        mu = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
+        backpointer=[torch.empty(self.k) for _ in sent]
+        mu[0][self.bos_t]=0  # handling the first 
         for j in range(1,len(sentence)-1):
             # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
             #pdb.set_trace()
-            
-            x = alpha[j-1].reshape(-1,1) + torch.log(self.A)  
+            x = mu[j-1].reshape(-1,1) + torch.log(self.A)  
             max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(-1,1),0) 
-            alpha[j] = max_mat[0]   # alpha values
+            mu[j] = max_mat[0]   # alpha values
             backpointer[j] = max_mat[1]
         # handeling the last tag
         #pdb.set_trace()
-        max_mat = torch.max(alpha[-2].reshape(-1,1)+ torch.log(self.A), 0)
-        alpha[-1] = max_mat[0]
-        backpointer[j+1] = max_mat[1]
+        max_mat = torch.max(mu[-2].reshape(-1,1)+ torch.log(self.A), 0)
+        mu[-1] = max_mat[0]
+        backpointer[-1] = max_mat[1]
         prev_t = self.eos_t
-        seq = []
+        seq = deque([])
         for i in range(len(sentence)-1,-1,-1):
             word = self.vocab[sent[i][0]]
             tag = self.tagset[prev_t]
            
-            prev_t = backpointer[i][prev_t].item()
-            seq.append((word,tag))
-        seq.reverse()
-        return seq
+            prev_t = backpointer[i][prev_t]
+            seq.appendleft((word,tag))
+            #seq.append((word,tag))
+        #seq.reverse()
+        return list(seq)
             
     
 
@@ -307,7 +304,7 @@ class HiddenMarkovModel(nn.Module):
             #pdb.set_trace()
             
             if m % minibatch_size == 0 and m > 0:
-               # input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
+                #input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 optimizer.zero_grad()          # backward pass will add to existing gradient, so zero it
                 objective = -log_likelihood + (minibatch_size/corpus.num_tokens()) * reg * self.params_L2()

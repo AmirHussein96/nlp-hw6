@@ -7,7 +7,7 @@ from typing import Callable
 
 from corpus import TaggedCorpus, sentence_str
 from eval import model_cross_entropy, tagger_write_output
-from hmm_test import HiddenMarkovModel
+from hmm import HiddenMarkovModel
 from lexicon import build_lexicon
 import torch
 import pdb

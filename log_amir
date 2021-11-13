@@ -1,0 +1,47 @@
+INFO : Read 191873 tokens from ensup, enraw
+INFO : Created 26 tag types
+INFO : Created 18461 word types
+INFO : Tagset: f['W', 'J', 'N', 'C', 'V', 'I', 'D', ',', 'M', 'P', '.', 'E', 'R', '`', "'", 'T', '$', ':', '-', '#', 'S', 'F', 'U', 'L', '_EOS_TAG_', '_BOS_TAG_']
+INFO : Read 95936 tokens from ensup
+INFO : Created 26 tag types
+INFO : Created 12466 word types
+INFO : From words-50.txt, got embeddings for 10420 of 18461 word types
+0it [00:00, ?it/s]
+0it [00:00, ?it/s][A
+30it [00:00, 293.08it/s][A
+55it [00:00, 276.59it/s][A
+82it [00:00, 273.22it/s][A
+109it [00:00, 270.76it/s][A
+135it [00:00, 264.68it/s][A
+165it [00:00, 274.33it/s][A
+193it [00:00, 273.24it/s][A
+220it [00:00, 271.41it/s][A
+248it [00:00, 271.49it/s][A
+275it [00:01, 261.04it/s][A
+306it [00:01, 272.16it/s][A
+339it [00:01, 286.90it/s][A
+368it [00:01, 269.56it/s][A
+396it [00:01, 266.81it/s][A
+425it [00:01, 270.52it/s][A
+453it [00:01, 266.13it/s][A
+483it [00:01, 272.30it/s][A
+511it [00:01, 267.03it/s][A
+542it [00:01, 276.54it/s][A
+574it [00:02, 286.89it/s][A
+603it [00:02, 284.83it/s][A
+632it [00:02, 284.40it/s][A
+662it [00:02, 287.28it/s][A
+697it [00:02, 303.32it/s][A
+728it [00:02, 300.72it/s][A
+759it [00:02, 285.61it/s][A
+788it [00:02, 280.46it/s][A
+819it [00:02, 286.40it/s][A
+848it [00:03, 281.54it/s][A
+877it [00:03, 279.75it/s][A
+906it [00:03, 275.49it/s][A
+937it [00:03, 284.52it/s][A
+966it [00:03, 277.55it/s][A
+994it [00:03, 266.09it/s][A
+1023it [00:03, 272.58it/s][A
+1056it [00:03, 285.18it/s][A
+1085it [00:03, 274.73it/s][A

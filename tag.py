@@ -1,120 +1,160 @@
-#!/usr/bin/env python3
-
-# 601.465/665 - Natural Language Processing
-# Assignment 6 - HMM
-# Author: Amir Hussein
-
+"""
+Command-line interface for training and evaluating HMM and CRF taggers.
+"""
 import argparse
 import logging
-import math
-import pdb
-import torch
 from pathlib import Path
-from typing import Callable
-from corpus import TaggedCorpus, desupervise, sentence_str
-from eval import eval_tagging, model_cross_entropy, model_error_rate, tagger_write_output
+from eval import model_cross_entropy, model_error_rate, tagger_write_output
 from hmm import HiddenMarkovModel
 from lexicon import build_lexicon
-import torch
-import pdb
-
+from corpus import TaggedCorpus
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-
+    parser.add_argument("eval", type=str, help="evalutation file")
     parser.add_argument(
-        "eval_file",
-        type=Path,
-        nargs=1,
-        help="path to the evaluation file"
-    )
-
-    parser.add_argument(
+        "-m",
         "--model",
-        type=Path,
-        default = None,
-        help="path to the model file"
+        type=str,
+        help="optional initial model file to load (will be trained further).  Loading a model overrides most of the other options."
     )
     parser.add_argument(
-        "--train",
-        type=Path,
-        nargs="*",
-        default = None,
-        help="path to the training_files"
+        "-l",
+        "--lexicon",
+        type=str,
+        help="newly created model (if no model was loaded) should use this lexicon file",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--crf",
+        action="store_true",
+        default=False,
+        help="the newly created model (if no model was loaded) should be a CRF"
+    )
+    parser.add_argument(
+        "-u",
+        "--unigram",
+        action="store_true",
+        default=False,
+        help="the newly created model (if no model was loaded) should only be a unigram HMM or CRF"
+    )
+    parser.add_argument(
+        "-a",
+        "--awesome",
+        action="store_true",
+        default=False,
+        help="the newly created model (if no model was loaded) should use extra improvements"
+    )
+    parser.add_argument(
+        "-t",
+        "--train",
+        type=str,
+        nargs="*",
+        help="training files to train the model further"
+    )
+    parser.add_argument(
+        "--max_iters",
+        type=int,
+        default=50000,
+        help="maximum number of steps to train to prevent training for too long "
+             "(this is an practical trick that you can choose implement in the `train` method of hmm.py and crf.py)"
+    )
+    parser.add_argument(
+        "--reg",
+        type=float,
+        default=1.0,
+        help="l2 regularization during further training"
+    )
+    parser.add_argument(
+        "--lr",
+        type=float,
+        default=1e-4,
+        help="learning rate during fruther training"
+    )
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=1e-3,
+        help="tolerance for early stopping"
+    )
+    parser.add_argument(
+        "--train_batch_size",
+        type=int,
+        default=30,
+    )
+    parser.add_argument(
+        "--eval_batch_size",
+        type=int,
+        default=2000,
+    )
+    parser.add_argument(
+        "--save_path",
+        type=str,
+        default="tmp.model",
+        help="where to save the trained model"
+    )
+    parser.add_argument(
+        "--output_file",
+        type=str,
+        default=None,
+        help="where to save the prediction outputs"
+    )
+    verbosity = parser.add_mutually_exclusive_group()
+    verbosity.add_argument(
+        "-v",
+        "--verbose",
+        action="store_const",
+        const=logging.DEBUG,
+        default=logging.INFO,
+    )
+    verbosity.add_argument(
+        "-q", "--quiet", dest="verbose", action="store_const", const=logging.WARNING
+    )
+
+    args = parser.parse_args()
+    if not args.model and not args.lexicon:
+    	parser.error("Please provide lexicon file path when no model provided")
+    if not args.model and not args.train:
+    	parser.error("Please provide at least one training file when no model provided")
+    return args
 
 def main():
-    # Set up logging
-    logging.basicConfig(format="%(levelname)s : %(message)s", level=logging.INFO)  # could change INFO to DEBUG
     args = parse_args()
-    # load the training data
-    #pdb.set_trace()
-    if args.train != None:
-        if len(args.train)>1:
-            # Semi-supervised
-            entrain = TaggedCorpus(Path(args.train[0]), Path(args.train[1]) )                              # all training
-            endev = TaggedCorpus(Path(args.eval_file[0]), tagset=entrain.tagset, vocab=entrain.vocab)  # evaluation
-            ensup =   TaggedCorpus(Path(args.train[0]), tagset=entrain.tagset, vocab=entrain.vocab)  # supervised training
-            
-            logging.info(f"Tagset: f{list(entrain.tagset)}")
-            known_vocab = TaggedCorpus(Path(args.train[0])).vocab    # words seen with supervised tags; used in evaluation
-
-            
-            # Initialize an HMM
-            #lexicon = build_lexicon(ensup, one_hot=True)   # one-hot lexicon: separate parameters for each word
-            #lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
-            lexicon = build_lexicon(entrain, embeddings_file=Path('words-50.txt'))
-            hmm = HiddenMarkovModel(entrain.tagset, entrain.vocab, lexicon)
-            if args.model != None:
-                hmm = hmm.load(args.model)
-            # supervised training 
-            loss_sup = lambda model: model_cross_entropy(model, eval_corpus=ensup)
-            hmm.train(corpus=ensup, loss=loss_sup, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=1) 
-            # continue with unsupervised
-            loss_dev = lambda model: model_error_rate(model, eval_corpus=endev, known_vocab=known_vocab)
-            hmm.train(corpus=entrain, loss=loss_dev, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=0)
-
+    logging.basicConfig(level=args.verbose)
+    if args.model is not None:
+        if args.crf:
+            #TODO load a trained crf model
+            raise NotImplementedError
         else:
-            # supervised training
-            ensup =   TaggedCorpus(Path(args.train[0]))  # supervised training
-            endev = TaggedCorpus(Path(args.eval_file[0]), tagset=ensup.tagset, vocab=ensup.vocab)  # evaluation
-
-            # Initialize an HMM
-            #lexicon = build_lexicon(ensup, one_hot=True)   # one-hot lexicon: separate parameters for each word
-            #lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
-            lexicon = build_lexicon(ensup, embeddings_file=Path('words-50.txt'))
-            hmm = HiddenMarkovModel(ensup.tagset, ensup.vocab, lexicon)
-
-            loss_sup = lambda model: model_cross_entropy(model, eval_corpus=ensup)
-            if args.model != None:
-                hmm = hmm.load(args.model)
-            hmm.train(corpus=ensup, loss=loss_sup, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=1) 
-
-
+            model = HiddenMarkovModel.load(Path(args.model))
+        tagset = model.tagset
+        vocab = model.vocab
+        if args.train is not None:
+            train = TaggedCorpus(*[Path(t) for t in args.train], tagset=tagset, vocab=vocab)
     else:
-        # evaluate without training
-        endev = TaggedCorpus(Path(args.eval_file[0]))  # evaluation
-         # Initialize an HMM
-        #lexicon = build_lexicon(endev, one_hot=True)   # one-hot lexicon: separate parameters for each word
-        #lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
-        lexicon = build_lexicon(endev, embeddings_file=Path('words-50.txt'))
-        hmm = HiddenMarkovModel(endev.tagset, endev.vocab, lexicon)
-        assert args.model != None
-        hmm = hmm.load(args.model)
-        endev = TaggedCorpus(Path(args.eval_file[0]),tagset=hmm.tagset, vocab=hmm.vocab)  # evaluation
-    # for m, sentence in enumerate(endev):
-    #     viterbi = hmm.viterbi_tagging(desupervise(sentence), endev)
-    #     counts = eval_tagging(predicted=viterbi, gold=sentence, 
-    #                         known_vocab=known_vocab)
-    #     num = counts['NUM', 'ALL']
-    #     denom = counts['DENOM', 'ALL']
-        
-    #     logging.info(f"Gold:    {sentence_str(sentence)}")
-    #     logging.info(f"Viterbi: {sentence_str(viterbi)}")
-    #     logging.info(f"Loss:    {denom - num}/{denom}")
-    #     logging.info(f"Prob:    {math.exp(hmm.log_prob(sentence, endev))}")
+        train = TaggedCorpus(*[Path(t) for t in args.train])
+        tagset = train.tagset
+        vocab = train.vocab
+        if args.crf:
+            #TODO instantiate a new crf model, you should case on whether awesome tag is specified here
+            raise NotImplementedError
+        else:
+            lexicon = build_lexicon(train, embeddings_file=Path(args.lexicon), log_counts=args.awesome)
+            model = HiddenMarkovModel(tagset, vocab, lexicon, unigram=args.unigram)
 
-    tagger_write_output(hmm, endev, Path("%s.output" %str(args.eval_file[0])))
+    dev = TaggedCorpus(Path(args.eval), tagset=tagset, vocab=vocab)
+    if args.train is not None:
+        #TODO you can instantiate a different development loss depending on the question / which one optimizes performance
+        dev_loss =  lambda x: model_cross_entropy(x, dev)
+        model.train(corpus=train,
+                    loss=dev_loss,
+                    minibatch_size=args.train_batch_size,
+                    evalbatch_size=args.eval_batch_size,
+                    lr=args.lr,
+                    reg=args.reg,
+                    save_path=args.save_path,
+                    tolerance=args.tolerance)
+    tagger_write_output(model, dev, Path(args.eval+".output") if args.output_file is None else args.output_file)
+
+
 if __name__ == "__main__":
     main()
