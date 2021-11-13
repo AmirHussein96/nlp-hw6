@@ -11,7 +11,7 @@ import torch
 from tqdm import tqdm
 
 from corpus import Sentence, Word, EOS_WORD, BOS_WORD, OOV_WORD, TaggedCorpus, desupervise, sentence_str
-from hmm_div import HiddenMarkovModel
+from hmm import HiddenMarkovModel
 from integerize import Integerizer
 import pdb
 
