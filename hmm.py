@@ -201,7 +201,7 @@ class HiddenMarkovModel(nn.Module):
             #pdb.set_trace()
             if ti == None:
                 x = alpha[j-1].reshape(-1,1) + torch.log(self.A )  
-                alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(-1,1)), dim=0, keepdim=False, safe_inf=True) 
+                alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(1,-1)), dim=0, keepdim=False, safe_inf=True) 
             else:
                 #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
                 x = alpha[j-1] + torch.log(self.A[:,ti]) 
@@ -226,13 +226,14 @@ class HiddenMarkovModel(nn.Module):
 
         mu = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
         backpointer=[torch.empty(self.k) for _ in sent]
-        mu[0][self.bos_t]=0  # handling the first 
+        mu[0][self.bos_t]=0.  # handling the first 
         for j in range(1,len(sentence)-1):
             # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
             #pdb.set_trace()
             x = mu[j-1].reshape(-1,1) + torch.log(self.A)  
-            max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(-1,1),0) 
+            max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(1,-1),0) 
+           # max_mat = torch.max(x + torch.unsqueeze(torch.log(self.B[:,wi]),0),0) 
             mu[j] = max_mat[0]   # alpha values
             backpointer[j] = max_mat[1]
         # handeling the last tag
@@ -241,15 +242,16 @@ class HiddenMarkovModel(nn.Module):
         mu[-1] = max_mat[0]
         backpointer[-1] = max_mat[1]
         prev_t = self.eos_t
-        seq = deque([])
+        #seq = deque([])
+        seq = []
         for i in range(len(sentence)-1,-1,-1):
             word = self.vocab[sent[i][0]]
             tag = self.tagset[prev_t]
            
             prev_t = backpointer[i][prev_t]
-            seq.appendleft((word,tag))
-            #seq.append((word,tag))
-        #seq.reverse()
+            #seq.appendleft((word,tag))
+            seq.append((word,tag))
+        seq.reverse()
         return list(seq)
             
     
