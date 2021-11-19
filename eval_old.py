@@ -5,27 +5,22 @@
 import logging
 from pathlib import Path
 from math import nan, exp
-from typing import Counter, Tuple, Optional, Callable, Union
+from typing import Counter, Tuple, Optional
 
 import torch
-from tqdm import tqdm # type: ignore
+from tqdm import tqdm
 
 from corpus import Sentence, Word, EOS_WORD, BOS_WORD, OOV_WORD, TaggedCorpus, desupervise, sentence_str
 from hmm import HiddenMarkovModel
 from integerize import Integerizer
-
-
-def viterbi_tagger(model: HiddenMarkovModel, eval_corpus: TaggedCorpus) -> Callable[[Sentence], Sentence]:
-    def tagger(input:Sentence) -> Sentence:
-        return model.viterbi_tagging(input, eval_corpus)
-    return tagger
+import pdb
 
 def model_cross_entropy(model: HiddenMarkovModel,
                         eval_corpus: TaggedCorpus) -> float:
     """Return cross-entropy per token of the model on the given evaluation corpus.
     That corpus may be either supervised or unsupervised.
     Warning: Return value is in nats, not bits."""
-    with torch.no_grad(): # type: ignore
+    with torch.no_grad():
         log_prob = 0.0
         token_count = 0
         for gold in tqdm(eval_corpus.get_sentences()):
@@ -40,25 +35,16 @@ def model_error_rate(model: HiddenMarkovModel,
                      known_vocab: Optional[Integerizer[Word]] = None) -> float:
     """Return the error rate of the given model on the given evaluation corpus,
     after printing cross-entropy and a breakdown of accuracy (using the logger)."""
+    
+    model_cross_entropy(model, eval_corpus)   # call for side effects
 
-    model_cross_entropy(model, eval_corpus)  # call for side effects
-    return tagger_error_rate(viterbi_tagger(model, eval_corpus),
-                             eval_corpus,
-                             known_vocab=known_vocab)
-
-def tagger_error_rate(tagger: Callable[[Sentence], Sentence],
-                     eval_corpus: TaggedCorpus,
-                     known_vocab: Optional[Integerizer[Word]] = None) -> float:
-    """Return the error rate of the given generic tagger on the given evaluation corpus,
-    after printing cross-entropy and a breakdown of accuracy (using the logger)."""
-
-    with torch.no_grad(): # type: ignore
+    with torch.no_grad():
         counts: Counter[Tuple[str, str]] = Counter()  # keep running totals here
         for gold in tqdm(eval_corpus.get_sentences()):
-            predicted = tagger(desupervise(gold))
+            predicted = model.viterbi_tagging(desupervise(gold), eval_corpus)
             counts += eval_tagging(predicted, gold, known_vocab)   # += works on dictionaries
 
-    def fraction(c:str) -> float:
+    def fraction(c):
         num = counts['NUM',c]
         denom = counts['DENOM',c]
         return nan if denom==0 else num / denom
@@ -83,7 +69,8 @@ def eval_tagging(predicted: Sentence,
     # print(predicted)
     # print(gold)
     for ((word, tag), (goldword, goldtag)) in zip(predicted, gold):
-        #print(word, goldword)
+       # print(word, goldword)
+        #pdb.set_trace()
         assert word == goldword   # sentences being compared should have the same words!
         if word is BOS_WORD or word is EOS_WORD:  # not fair to get credit for these
             continue
@@ -101,15 +88,11 @@ def eval_tagging(predicted: Sentence,
 
     return counts
 
-
-def tagger_write_output(model_or_tagger: Union[HiddenMarkovModel, Callable[[Sentence], Sentence]],
+def tagger_write_output(model: HiddenMarkovModel,
                         eval_corpus: TaggedCorpus,
                         output_path: Path) -> None:
-    if isinstance(model_or_tagger, HiddenMarkovModel):
-        tagger = viterbi_tagger(model_or_tagger, eval_corpus)
-    else:
-        tagger = model_or_tagger
     with open(output_path, 'w') as f:
         for gold in tqdm(eval_corpus.get_sentences()):
-            predicted = tagger(desupervise(gold))
+            
+            predicted = model.viterbi_tagging(desupervise(gold), eval_corpus)
             f.write(sentence_str(predicted)+"\n")
