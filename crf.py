@@ -17,7 +17,7 @@ from torch.nn import functional as F
 from tqdm import tqdm
 #from scipy.special import logsumexp
 from corpus import (BOS_TAG, BOS_WORD, EOS_TAG, EOS_WORD, Sentence, Tag,
-                    TaggedCorpus, Word)
+                    TaggedCorpus, Word, desupervise)
 from integerize import Integerizer
 import pdb
 # Set the seed for random numbers in torch, for replicability
@@ -130,8 +130,10 @@ class CRFModel(nn.Module):
         """Set the transition and emission matrices A and B, based on the current parameters.
         See the "Parametrization" section of the reading handout."""
        # pdb.set_trace()
-        A = F.softmax(self._WA, dim=1)       # run softmax on params to get transition distributions
-                                             # note that the BOS_TAG column will be 0, but each row will sum to 1
+        # A = F.softmax(self._WA, dim=1)       # run softmax on params to get transition distributions
+                                              # note that the BOS_TAG column will be 0, but each row will sum to 1
+        A = F.exp(self._WA)
+
         if self.unigram:
             # A is a row vector giving unigram probabilities p(t).
             # We'll just set the bigram matrix to use these as p(t | s)
@@ -145,7 +147,8 @@ class CRFModel(nn.Module):
             self.A = A
 
         WB = self._ThetaB @ self._E.t()  # inner products of tag weights and word embeddings
-        B = F.softmax(WB, dim=1)         # run softmax on those inner products to get emission distributions
+        # B = F.softmax(WB, dim=1)         # run softmax on those inner products to get emission distributions
+        B = F.exp(WB, dim=1)
         self.B = B.clone()
         self.B[self.eos_t, :] = 0        # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
         self.B[self.bos_t, :] = 0        # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
@@ -171,15 +174,13 @@ class CRFModel(nn.Module):
 
 
     def log_prob(self, sentence: Sentence, corpus: TaggedCorpus) -> Tensor:
-        """Compute the log probability of a single sentence under the current
+        """Compute the conditional log probability of a single sentence under the current
         model parameters.  If the sentence is not fully tagged, the probability
         will marginalize over all possible tags.  
 
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
-        sentence_no_tag = [Tuple[Tword[0], None] for Tword in sentence]
-        return self.log_forward(sentence, corpus) - self.log_forward(sentence_no_tag, corpus)
-
+        return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
 
     def log_forward(self, sentence: Sentence, corpus: TaggedCorpus) -> Tensor:
         """Run the forward algorithm from the handout on a tagged, untagged, 

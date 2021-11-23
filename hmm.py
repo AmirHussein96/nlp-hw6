@@ -219,11 +219,6 @@ class HiddenMarkovModel(nn.Module):
         # step.  But to better match the notation in the handout, we'll instead preallocate
         # a list of length n+2 so that we can assign directly to alpha[j].
 
-
-        # TODO: change self.A when 'awesome' present
-        # TODO: label no-tag word with external packages
-        # TODO: HMM trigram
-
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
         alpha[0][self.bos_t] = 0  # handling the first 
         for j in range(1,len(sentence)-1):

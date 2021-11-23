@@ -135,11 +135,11 @@ def main():
         tagset = train.tagset
         vocab = train.vocab
         if args.crf:
-            #TODO instantiate a new crf model, you should case on whether awesome tag is specified here
-            raise NotImplementedError
+            lexicon = build_lexicon(train, embeddings_file=Path(args.lexicon), log_counts=args.awesome, affixes=args.awesome)
+            model = CRFModel(tagset, vocab, lexicon, unigram=args.unigram, awesome=args.awesome, affixes=args.awesome)
         else:
             lexicon = build_lexicon(train, embeddings_file=Path(args.lexicon), log_counts=args.awesome)
-            model = HiddenMarkovModel(tagset, vocab, lexicon, unigram=args.unigram, awesome=args.awesome)
+            model = HiddenMarkovModel(tagset, vocab, lexicon, unigram=args.unigram, awesome=args.awesome, affixes=args.awesome)
 
     dev = TaggedCorpus(Path(args.eval), tagset=tagset, vocab=vocab)
     if args.train is not None:

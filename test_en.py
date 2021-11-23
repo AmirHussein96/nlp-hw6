@@ -25,24 +25,28 @@ logging.info(f"Tagset: f{list(entrain.tagset)}")
 known_vocab = TaggedCorpus(Path("../nlp6-data/ensup")).vocab    # words seen with supervised tags; used in evaluation
 
 # Initialize an HMM
-lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
+# normal
+#lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
 # hmm = HiddenMarkovModel(entrain.tagset, entrain.vocab, lexicon)
-hmm = CRFModel(entrain.tagset, entrain.vocab, lexicon) # not changing the name for convenience
-logging.info("Running on CRF Model")
+# --------------------------------- awesome!
+lexicon = build_lexicon(ensup, embeddings_file=Path('../lexicons/words-50.txt'), log_counts=True)  # works better with more attributes!
+hmm = HiddenMarkovModel(ensup.tagset, ensup.vocab, lexicon, awesome=True)
 
 # Let's initialize with supervised training to approximately maximize the
 # regularized log-likelihood.  If you want to speed this up, you can increase
 # the tolerance of training (using the `tolerance` argument), since we don't 
 # really have to train to convergence.
 loss_sup = lambda model: model_cross_entropy(model, eval_corpus=ensup)
-hmm.train(corpus=ensup, loss=loss_sup, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=1, save_path='en_hmm.pkl') 
+hmm.train(corpus=ensup, loss=loss_sup, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=1, save_path='en_hmm_awesome.pkl') 
+logging.info("sup error rate is: ", model_error_rate(hmm, eval_corpus=ensup, known_vocab=known_vocab))
 
 # Now let's throw in the unsupervised training data as well, and continue
 # training to try to improve accuracy on held-out development data.
 # We'll stop when accuracy is getting worse, so we can get away without regularization,
 # but it would be better to search for the best `reg` and other hyperparameters in this call.
 loss_dev = lambda model: model_error_rate(model, eval_corpus=endev, known_vocab=known_vocab)
-hmm.train(corpus=entrain, loss=loss_dev, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=0, save_path='en_hmm_raw.pkl')
+#hmm.train(corpus=entrain, loss=loss_dev, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=0, save_path='en_hmm_raw.pkl')
+logging.info("dev error rate is: ", model_error_rate(hmm, eval_corpus=endev, known_vocab=known_vocab))
 
 # More detailed look at the first 10 sentences in the held-out corpus,
 # including Viterbi tagging.
