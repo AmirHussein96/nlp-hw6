@@ -9,6 +9,7 @@ from typing import Callable
 from corpus import TaggedCorpus, desupervise, sentence_str
 from eval import eval_tagging, model_cross_entropy, model_error_rate
 from hmm import HiddenMarkovModel
+from crf import CRFModel
 from lexicon import build_lexicon
 import torch
 
@@ -25,7 +26,9 @@ known_vocab = TaggedCorpus(Path("../nlp6-data/ensup")).vocab    # words seen wit
 
 # Initialize an HMM
 lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
-hmm = HiddenMarkovModel(entrain.tagset, entrain.vocab, lexicon)
+# hmm = HiddenMarkovModel(entrain.tagset, entrain.vocab, lexicon)
+hmm = CRFModel(entrain.tagset, entrain.vocab, lexicon) # not changing the name for convenience
+logging.info("Running on CRF Model")
 
 # Let's initialize with supervised training to approximately maximize the
 # regularized log-likelihood.  If you want to speed this up, you can increase

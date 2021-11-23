@@ -27,7 +27,7 @@ torch.cuda.manual_seed(69_420)  # No-op if CUDA isn't available
 ###
 # HMM tagger
 ###
-class HiddenMarkovModel(nn.Module):
+class CRFModel(nn.Module):
     """An implementation of an HMM, whose emission probabilities are
     parameterized using the word embeddings in the lexicon.
     
@@ -150,21 +150,6 @@ class HiddenMarkovModel(nn.Module):
         self.B[self.eos_t, :] = 0        # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
         self.B[self.bos_t, :] = 0        # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
         self.B = self.B + 1e-45
-        
-        # if self.awesome: # making transition matrix sparse
-        #     reg_loss = sum(abs(self.A))
-        #     criterion = nn.CrossEntropyLoss() #?
-        #     optimizer = optimizer = torch.optim.SGD(self.A, lr=1e-3)
-        #     target = torch.empty(10, dtype=torch.long).random_(2) # what should be the target
-        #     num_epochs = 100
-        #     for epoch in range(num_epochs):
-        #         optimizer.zero_grad()
-        #         output = self.A # todo: change
-        #         reg_loss = criterion(output, target)
-        #         reg_loss += torch.norm(self.A, p=1)
-        #         reg_loss.backward() # computes derivative of loss
-        #         optimizer.step()
-
         self.A = self.A + 1e-45
 
 
@@ -192,7 +177,8 @@ class HiddenMarkovModel(nn.Module):
 
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
-        return self.log_forward(sentence, corpus)
+        sentence_no_tag = [Tuple[Tword[0], None] for Tword in sentence]
+        return self.log_forward(sentence, corpus) - self.log_forward(sentence_no_tag, corpus)
 
 
     def log_forward(self, sentence: Sentence, corpus: TaggedCorpus) -> Tensor:
@@ -209,11 +195,7 @@ class HiddenMarkovModel(nn.Module):
         # The "nice" way to construct alpha is by appending to a List[Tensor] at each
         # step.  But to better match the notation in the handout, we'll instead preallocate
         # a list of length n+2 so that we can assign directly to alpha[j].
-
-
-        # TODO: change self.A when 'awesome' present
-        # TODO: label no-tag word with external packages
-        # TODO: HMM trigram
+        # TODO: move over improvements from HMM
 
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
         alpha[0][self.bos_t] = 0  # handling the first 

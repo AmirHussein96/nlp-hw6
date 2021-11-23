@@ -96,15 +96,20 @@ def log_counts_lexicon(corpus: TaggedCorpus) -> torch.Tensor:
     feature is log(1+c) where c=count(t,w) is the number of times t emitted w in supervised
     training data.  Thus, if this feature has weight 1.0 and is the only feature,
     then p(w | t) will be proportional to 1+count(t,w), just as in add-1 smoothing."""
-
-    raise NotImplementedError   # you fill this in!
+    assert corpus.wt_pair
+    return torch.log(corpus.wt_pair + 1)
 
 def affixes_lexicon(corpus: TaggedCorpus) -> torch.Tensor:
     """Return a feature matrix with as many rows as corpus.vocab, where each
     row represents a feature vector for the corresponding word w.
     Each row has binary features for common suffixes and affixes that the
     word has."""
-
-    raise NotImplementedError
+    vocab, common = corpus.vocab, corpus.common
+    matrix = torch.empty((len(vocab), len(common)))
+    for i, v in enumerate(vocab):
+        include = [v.index(c) for c in common]
+        matrix[i] = torch.Tensor([0 if j<0 else 1 for j in include]) # TODO: find out how to build common from corpus: common eng words or what
+    # TODO figure out where to use this function
+    return matrix
 
 # Other feature templates could be added, such as word shape.
