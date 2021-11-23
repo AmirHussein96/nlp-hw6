@@ -125,7 +125,16 @@ class HiddenMarkovModel(nn.Module):
             x_finite = x[x.isfinite()]
             l2 = l2 + x_finite @ x_finite   # add ||x_finite||^2
         return l2
-
+      
+    def params_L1(self) -> Tensor:
+        """What's the L1 norm of the current parameter vector?
+        We consider only the finite parameters."""
+        l1 = tensor(0.0)
+        for x in self.parameters():
+            x_finite = x[x.isfinite()]
+            l1 = l1 + torch.sum(torch.abs(x_finite))  # add ||x_finite||^1
+        return l1
+      
     def updateAB(self) -> None:
         """Set the transition and emission matrices A and B, based on the current parameters.
         See the "Parametrization" section of the reading handout."""
@@ -329,7 +338,7 @@ class HiddenMarkovModel(nn.Module):
                 #input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 optimizer.zero_grad()          # backward pass will add to existing gradient, so zero it
-                objective = -log_likelihood + (minibatch_size/corpus.num_tokens()) * reg * self.params_L2()
+                objective = -log_likelihood + (minibatch_size/corpus.num_tokens()) * reg * self.params_L1()
                 objective.backward()           # compute gradient of regularized negative log-likelihod
                 length = sqrt(sum((x.grad*x.grad).sum().item() for x in self.parameters()))
                 logging.debug(f"Size of gradient vector: {length}")  # should approach 0 for large minibatch at local min
