@@ -74,8 +74,12 @@ class TaggedCorpus:
 
         super().__init__()
         self.files = files
-        self.wt_pair = torch.empty((len(vocab), len(tagset)))
-        self.common = [] # list of common suffixes and affixes
+        self.common = ["dis", "in", "im", "il", "ir", "un", "over", "mis", "out", "be", "co", "de", \
+                       "inter", "pre", "sub", "trans", "under", \
+                       "anti", "auto", "counter", "ex", "hyper", "mis", "sub",\
+                       "ed", "ing", "s", "es", "ly", "ness", "ise", "ence", "en"\
+                       "tion", "sion", "er", "er", "ment", "", "ant", "ent", "al", "ry", "ery",] 
+        # list of common suffixes and affixes
 
         # Read the corpus to harvest the tagset and vocabulary, if needed
         if tagset is None or vocab is None:
@@ -160,15 +164,12 @@ class TaggedCorpus:
                         if "/" in token:
                             w, t = token.split("/")   
                             word, tag = Word(w), Tag(t)       # for example, "caviar/Noun"
-                            self.wt_pair[self.vocab.index(w), self.tagset.index(t)] += 1
                         else:
                             word, tag = Word(token), None     # for example, "caviar" without a tag
-                        if (not oovs) or word in self.vocab: # TODO: how to deel with this
+                        if (not oovs) or word in self.vocab:
                             yield word, tag       # keep the word
                         else:
-                            self.wt_pair[self.vocab.index(OOV_WORD), self.tagset.index(t)] += 1
                             yield OOV_WORD, tag   # replace this out-of-vocabulary word with OOV
-                    self.wt_pair[self.vocab.index(EOS_WORD), self.tagset.index(EOS_TAG)] += 1 # TODO: check BOS
                     yield EOS_WORD, EOS_TAG  # Every line in the file implicitly ends with EOS.
 
     def get_sentences(self) -> Iterable[Sentence]:
