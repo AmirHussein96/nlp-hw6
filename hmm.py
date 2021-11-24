@@ -138,7 +138,7 @@ class HiddenMarkovModel(nn.Module):
     def updateAB(self) -> None:
         """Set the transition and emission matrices A and B, based on the current parameters.
         See the "Parametrization" section of the reading handout."""
-       # pdb.set_trace()
+        # pdb.set_trace()
         A = F.softmax(self._WA, dim=1)       # run softmax on params to get transition distributions
                                              # note that the BOS_TAG column will be 0, but each row will sum to 1
         if self.unigram:
@@ -228,7 +228,6 @@ class HiddenMarkovModel(nn.Module):
             if ti == None:
                 x = alpha[j-1].reshape(-1,1) + torch.log(self.A)  
                 alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(1,-1)), dim=0, keepdim=False, safe_inf=True) 
-
             else:
                 #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
                 x = alpha[j-1] + torch.log(self.A[:,ti]) 

@@ -32,6 +32,12 @@ def parse_args() -> argparse.Namespace:
         help="the newly created model (if no model was loaded) should be a CRF"
     )
     parser.add_argument(
+        "--birnn",
+        action="store_true",
+        default=False,
+        help="the loaded CRF model uses bi-RNN instead of traditional CRF"
+    )
+    parser.add_argument(
         "-u",
         "--unigram",
         action="store_true",
@@ -123,7 +129,7 @@ def main():
     logging.basicConfig(level=args.verbose)
     if args.model is not None:
         if args.crf:
-            model = CRFModel.load(Path(args.model))
+            model = CRFModel.load(Path(args.model), birnn=args.birnn if args.birnn else False)
         else:
             model = HiddenMarkovModel.load(Path(args.model))
         tagset = model.tagset

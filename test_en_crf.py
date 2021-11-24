@@ -49,7 +49,7 @@ logging.info("sup error rate is: ", model_error_rate(hmm, eval_corpus=ensup, kno
 # We'll stop when accuracy is getting worse, so we can get away without regularization,
 # but it would be better to search for the best `reg` and other hyperparameters in this call.
 loss_dev = lambda model: model_error_rate(model, eval_corpus=endev, known_vocab=known_vocab)
-# hmm.train(corpus=entrain, loss=loss_dev, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=0, save_path='en_crf_raw.pkl')
+hmm.train(corpus=entrain, loss=loss_dev, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=0, save_path='en_crf_raw.pkl')
 logging.info("dev error rate is: ", model_error_rate(hmm, eval_corpus=endev, known_vocab=known_vocab))
 
 # More detailed look at the first 10 sentences in the held-out corpus,

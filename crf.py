@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # CS465 at Johns Hopkins University.
-# Implementation of Hidden Markov Models.
+# Implementation of CRF Models.
 
 from __future__ import annotations
 import logging
@@ -25,13 +25,13 @@ torch.manual_seed(1337)
 torch.cuda.manual_seed(69_420)  # No-op if CUDA isn't available
 
 ###
-# HMM tagger
+# CRF tagger
 ###
 class CRFModel(nn.Module):
-    """An implementation of an HMM, whose emission probabilities are
+    """An implementation of an CRF, whose emission probabilities are
     parameterized using the word embeddings in the lexicon.
     
-    We'll refer to the HMM states as "tags" and the HMM observations 
+    We'll refer to the CRF states as "tags" and the CRF observations 
     as "words."
     """
 
@@ -40,14 +40,11 @@ class CRFModel(nn.Module):
                  vocab: Integerizer[Word],
                  lexicon: Tensor,
                  unigram=False,
-                 awesome=False): 
-        """Construct an HMM with initially random parameters, with the
+                 awesome=False,
+                 birnn=False): 
+        """Construct an CRF with initially random parameters, with the
         given tagset, vocabulary, and lexical features.
-        
-        Normally this is an ordinary first-order (bigram) HMM.  The unigram
-        flag says to fall back to a zeroth-order HMM, in which the diffesesssrent
-        positions are generated independently.  (The code could be extended
-        to support higher-order HMMs: trigram HMMs used to be popular.)"""
+        """
 
         super().__init__()
 
@@ -66,6 +63,7 @@ class CRFModel(nn.Module):
         self.d = lexicon.size(1)   # dimensionality of a word's embedding in attribute space
         self.unigram = unigram     # do we fall back to a unigram model?
         self.awesome = awesome     # further improvements
+        self.birnn = birnn
 
         self.tagset = tagset
         self.vocab = vocab
@@ -91,7 +89,7 @@ class CRFModel(nn.Module):
     def _integerize_sentence(self, sentence: Sentence, corpus: TaggedCorpus) -> List[Tuple[int,Optional[int]]]:
         """Integerize the words and tags of the given sentence, which came from the given corpus."""
 
-        # Make sure that the sentence comes from a corpus that this HMM knows
+        # Make sure that the sentence comes from a corpus that this CRF knows
         # how to handle.
         if corpus.tagset != self.tagset or corpus.vocab != self.vocab:
             raise TypeError("The corpus that this sentence came from uses a different tagset or vocab")
@@ -132,7 +130,7 @@ class CRFModel(nn.Module):
        # pdb.set_trace()
         # A = F.softmax(self._WA, dim=1)       # run softmax on params to get transition distributions
                                               # note that the BOS_TAG column will be 0, but each row will sum to 1
-        A = F.exp(self._WA)
+        A = self._WA
 
         if self.unigram:
             # A is a row vector giving unigram probabilities p(t).
@@ -148,12 +146,12 @@ class CRFModel(nn.Module):
 
         WB = self._ThetaB @ self._E.t()  # inner products of tag weights and word embeddings
         # B = F.softmax(WB, dim=1)         # run softmax on those inner products to get emission distributions
-        B = F.exp(WB, dim=1)
+        B = WB
         self.B = B.clone()
         self.B[self.eos_t, :] = 0        # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
         self.B[self.bos_t, :] = 0        # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
         self.B = self.B + 1e-45
-        self.A = self.A + 1e-45
+        #self.A = self.A + 1e-45
 
 
     def printAB(self):
@@ -196,22 +194,17 @@ class CRFModel(nn.Module):
         # The "nice" way to construct alpha is by appending to a List[Tensor] at each
         # step.  But to better match the notation in the handout, we'll instead preallocate
         # a list of length n+2 so that we can assign directly to alpha[j].
-        # TODO: move over improvements from HMM
-
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
         alpha[0][self.bos_t] = 0  # handling the first 
         for j in range(1,len(sentence)-1):
-            # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
-            #pdb.set_trace()
             if ti == None:
-                x = alpha[j-1].reshape(-1,1) + torch.log(self.A)  
-                alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(1,-1)), dim=0, keepdim=False, safe_inf=True) 
+                x = alpha[j-1].reshape(-1,1) + self.A # we put self.A into log space as well so we dont take log here
+                alpha[j] = logsumexp_new(x + self.B[:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True) # same. B is in log space
 
             else:
-                #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
-                x = alpha[j-1] + torch.log(self.A[:,ti]) 
-                alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]), dim=0, keepdim=False, safe_inf=True)
+                x = alpha[j-1] + self.A[:,ti]
+                alpha[j][ti] = logsumexp_new(x + self.B[ti,wi], dim=0, keepdim=False, safe_inf=True)
 
            # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
         #pdb.set_trace()  
@@ -262,12 +255,12 @@ class CRFModel(nn.Module):
 
     def train(self, 
               corpus: TaggedCorpus,
-              loss: Callable[[HiddenMarkovModel], float],
+              loss: Callable[[CRFModel], float],
               tolerance=0.001,
               minibatch_size: int = 1, evalbatch_size: int = 500,
               lr: float = 1.0, reg: float = 0.0, 
-              save_path: Path = Path("my_hmm.pkl")) -> None:
-        """Train the HMM on the given training corpus, starting at the current parameters.
+              save_path: Path = Path("my_crf.pkl")) -> None:
+        """Train the CRF on the given training corpus, starting at the current parameters.
         The minibatch size controls how often we do an update.
         (Recommended to be larger than 1 for speed; can be inf for the whole training corpus.)
         The evalbatch size controls how often we evaluate (e.g., on a development corpus).
@@ -349,7 +342,7 @@ class CRFModel(nn.Module):
 
 
     @classmethod
-    def load(cls, source: Path) -> HiddenMarkovModel:
+    def load(cls, source: Path) -> CRFModel:
         import pickle  # for loading/saving Python objects
         logging.info(f"Loading model from {source}")
         with open(source, mode="rb") as f:
