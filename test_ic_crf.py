@@ -24,7 +24,6 @@ logging.basicConfig(format="%(levelname)s : %(message)s", level=logging.INFO)  #
 
 # Get the corpora
 icsup = TaggedCorpus(Path("../nlp6-data/icsup"), add_oov=False)
-#icdev = TaggedCorpus(Path("../nlp6-data/icdev"), add_oov=False)
 logging.info(f"Ice cream vocabulary: {list(icsup.vocab)}")
 logging.info(f"Ice cream tagset: {list(icsup.tagset)}")
 
@@ -39,5 +38,5 @@ logging.info("Running on CRF Model")
 # the tolerance of training (using the `tolerance` argument), since we don't 
 # really have to train to convergence.
 loss_sup = lambda model: model_cross_entropy(model, eval_corpus=icsup)
-crf.train(corpus=icsup, loss=loss_sup, minibatch_size=30, evalbatch_size=10000, lr=0.0001, reg=1, save_path='ic_crf.pkl') 
+crf.train(corpus=icsup, loss=loss_sup, minibatch_size=10, evalbatch_size=500, lr=0.0001, reg=1, save_path='ic_crf.pkl') 
 logging.info("dev error rate is: ", model_error_rate(crf, eval_corpus=icsup))

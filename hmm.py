@@ -159,21 +159,6 @@ class HiddenMarkovModel(nn.Module):
         self.B[self.eos_t, :] = 0        # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
         self.B[self.bos_t, :] = 0        # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
         self.B = self.B + 1e-45
-        
-        # if self.awesome: # making transition matrix sparse
-        #     reg_loss = sum(abs(self.A))
-        #     criterion = nn.CrossEntropyLoss() #?
-        #     optimizer = optimizer = torch.optim.SGD(self.A, lr=1e-3)
-        #     target = torch.empty(10, dtype=torch.long).random_(2) # what should be the target
-        #     num_epochs = 100
-        #     for epoch in range(num_epochs):
-        #         optimizer.zero_grad()
-        #         output = self.A # todo: change
-        #         reg_loss = criterion(output, target)
-        #         reg_loss += torch.norm(self.A, p=1)
-        #         reg_loss.backward() # computes derivative of loss
-        #         optimizer.step()
-
         self.A = self.A + 1e-45
 
 
@@ -253,28 +238,21 @@ class HiddenMarkovModel(nn.Module):
         backpointer=[torch.empty(self.k) for _ in sent]
         mu[0][self.bos_t]=0.  # handling the first 
         for j in range(1,len(sentence)-1):
-            # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
-            #pdb.set_trace()
             x = mu[j-1].reshape(-1,1) + torch.log(self.A)  
             max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(1,-1),0) 
-           # max_mat = torch.max(x + torch.unsqueeze(torch.log(self.B[:,wi]),0),0) 
             mu[j] = max_mat[0]   # alpha values
             backpointer[j] = max_mat[1]
-        # handeling the last tag
-        #pdb.set_trace()
         max_mat = torch.max(mu[-2].reshape(-1,1)+ torch.log(self.A), 0)
         mu[-1] = max_mat[0]
         backpointer[-1] = max_mat[1]
         prev_t = self.eos_t
-        #seq = deque([])
         seq = []
         for i in range(len(sentence)-1,-1,-1):
             word = self.vocab[sent[i][0]]
             tag = self.tagset[prev_t]
            
             prev_t = backpointer[i][prev_t]
-            #seq.appendleft((word,tag))
             seq.append((word,tag))
         seq.reverse()
         return list(seq)

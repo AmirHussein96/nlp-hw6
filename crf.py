@@ -114,7 +114,6 @@ class CRFModel(nn.Module):
         WA[:, self.bos_t] = -inf               # correct the BOS_TAG column
         self._WA = nn.Parameter(WA)            # params used to construct transition matrix
 
-
     def params_L2(self) -> Tensor:
         """What's the L2 norm of the current parameter vector?
         We consider only the finite parameters."""
@@ -148,11 +147,8 @@ class CRFModel(nn.Module):
         # B = F.softmax(WB, dim=1)         # run softmax on those inner products to get emission distributions
         B = WB
         self.B = B.clone()
-        self.B[self.eos_t, :] = 0        # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
-        self.B[self.bos_t, :] = 0        # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
-        self.B = self.B + 1e-45
-        #self.A = self.A + 1e-45
-
+        self.B[self.eos_t, :] = -inf       # but don't guess: EOS_TAG can't emit any column's word (only EOS_WORD)
+        self.B[self.bos_t, :] = -inf       # same for BOS_TAG (although BOS_TAG will already be ruled out by other factors)
 
     def printAB(self):
         """Print the A and B matrices in a more human-readable format (tab-separated)."""
@@ -169,7 +165,6 @@ class CRFModel(nn.Module):
             row = [self.tagset[t]] + [f"{self.B[t,w]:.3f}" for w in range(self.B.size(1))]
             print("\t".join(row))
         print("\n")
-
 
     def log_prob(self, sentence: Sentence, corpus: TaggedCorpus) -> Tensor:
         """Compute the conditional log probability of a single sentence under the current
@@ -201,13 +196,10 @@ class CRFModel(nn.Module):
             if ti == None:
                 x = alpha[j-1].reshape(-1,1) + self.A # we put self.A into log space as well so we dont take log here
                 alpha[j] = logsumexp_new(x + self.B[:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True) # same. B is in log space
-
             else:
                 x = alpha[j-1] + self.A[:,ti]
                 alpha[j][ti] = logsumexp_new(x + self.B[ti,wi], dim=0, keepdim=False, safe_inf=True)
 
-           # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
-        #pdb.set_trace()  
         # handeling the last tag 
         alpha[-1][self.eos_t]= logsumexp_new(alpha[-2]+ self.A[:,self.eos_t],dim=0, keepdim=False, safe_inf=True)
         return alpha[-1][self.eos_t] # Z
@@ -226,28 +218,22 @@ class CRFModel(nn.Module):
         backpointer=[torch.empty(self.k) for _ in sent]
         mu[0][self.bos_t]=0.  # handling the first 
         for j in range(1,len(sentence)-1):
-            # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
-            #pdb.set_trace()
-            x = mu[j-1].reshape(-1,1) + torch.log(self.A)  
-            max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(1,-1),0) 
-           # max_mat = torch.max(x + torch.unsqueeze(torch.log(self.B[:,wi]),0),0) 
+            x = mu[j-1].reshape(-1,1) + self.A
+            max_mat = torch.max(x + self.B[:,wi].reshape(1,-1),0) 
             mu[j] = max_mat[0]   # alpha values
             backpointer[j] = max_mat[1]
         # handeling the last tag
-        #pdb.set_trace()
-        max_mat = torch.max(mu[-2].reshape(-1,1)+ torch.log(self.A), 0)
+        max_mat = torch.max(mu[-2].reshape(-1,1)+ self.A, 0)
         mu[-1] = max_mat[0]
         backpointer[-1] = max_mat[1]
         prev_t = self.eos_t
-        #seq = deque([])
         seq = []
         for i in range(len(sentence)-1,-1,-1):
             word = self.vocab[sent[i][0]]
             tag = self.tagset[prev_t]
            
             prev_t = backpointer[i][prev_t]
-            #seq.appendleft((word,tag))
             seq.append((word,tag))
         seq.reverse()
         return list(seq)

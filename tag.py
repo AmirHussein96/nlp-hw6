@@ -129,7 +129,7 @@ def main():
     logging.basicConfig(level=args.verbose)
     if args.model is not None:
         if args.crf:
-            model = CRFModel.load(Path(args.model), birnn=args.birnn if args.birnn else False)
+            model = CRFModel.load(Path(args.model))
         else:
             model = HiddenMarkovModel.load(Path(args.model))
         tagset = model.tagset

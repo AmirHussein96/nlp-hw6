@@ -106,9 +106,11 @@ def tagger_write_output(model_or_tagger: Union[HiddenMarkovModel, Callable[[Sent
                         eval_corpus: TaggedCorpus,
                         output_path: Path) -> None:
     if isinstance(model_or_tagger, HiddenMarkovModel):
+        logging.info("HMM!")
         tagger = viterbi_tagger(model_or_tagger, eval_corpus)
     else:
-        tagger = model_or_tagger
+        logging.info("NOT HMM!")
+        tagger = viterbi_tagger(model_or_tagger, eval_corpus)
     with open(output_path, 'w') as f:
         for gold in tqdm(eval_corpus.get_sentences()):
             predicted = tagger(desupervise(gold))
