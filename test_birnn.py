@@ -32,7 +32,7 @@ known_vocab = TaggedCorpus(Path("../nlp6-data/ensup")).vocab    # words seen wit
 # Initialize an HMM
 # normal
 lexicon = build_lexicon(entrain, embeddings_file=Path('../lexicons/words-50.txt'))  # works better with more attributes!
-crf = CRFModel(ensup.tagset, ensup.vocab, lexicon) # not changing the name for convenience
+crf = CRFModel(ensup.tagset, ensup.vocab, lexicon, birnn=True) # not changing the name for convenience
 logging.info("Running on CRF Model")
 
 # Let's initialize with supervised training to approximately maximize the

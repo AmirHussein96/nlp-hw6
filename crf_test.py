@@ -116,8 +116,8 @@ class CRFModel(nn.Module):
             WA[:, self.bos_t] = -inf               # correct the BOS_TAG column
             self._WA = nn.Parameter(WA)            # params used to construct transition matrix
         if self.birnn:
-            self.ThetaA = nn.parameter(torch.rand(self.f_dim, 1))
-            self.ThetaB = nn.parameter(torch.rand(self.f_dim, 1))
+            self.ThetaA = nn.Parameter(torch.rand(self.f_dim, 1))
+            self.ThetaB = nn.Parameter(torch.rand(self.f_dim, 1))
             self.M = nn.Parameter(torch.rand((self.h_dim, 1 + self.h_dim + self.d)))
             self.M_prime = nn.Parameter(torch.rand((self.h_dim, 1 + self.h_dim + self.d)))
             self.UA = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + 2*self.k)))
@@ -183,12 +183,9 @@ class CRFModel(nn.Module):
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
 
-        if self.birnn:
-            return self.rnn_forward(sentence, corpus) - self.rnn(desupervise(sentence), corpus)
-        else:
-            return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
+        return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
 
-    def rnn_forward(self, sentence: Sentence, corpus: TaggedCorpus):
+    def RNN_update_AB(self, sentence: Sentence, corpus: TaggedCorpus):
         words = sentence.split(" ")
         s_len = len(words)
         # get h and h_prime
@@ -220,8 +217,8 @@ class CRFModel(nn.Module):
         Fb[:,:,:,1+self.f_dim+self.k*2:] = torch.matmul(self.UA[1+self.f_dim+self.k*2:], h_prime[1:,:,:])
 
         # update phi_A phi_B
-        phi_A = tensor.matmul(self.ThetaA, Fa) # TODO: check dimensions
-        phi_B = tensor.matmul(self.ThetaB, Fb)
+        self.A = tensor.matmul(self.ThetaA, Fa) # TODO: check dimensions
+        self.B = tensor.matmul(self.ThetaB, Fb)
 
         # TODO: calculate probability from phi
         return 0
@@ -325,7 +322,8 @@ class CRFModel(nn.Module):
         old_dev_loss: Optional[float] = None    # we'll keep track of the dev loss here
 
         optimizer = torch.optim.SGD(self.parameters(), lr=lr)  # optimizer knows what the params are
-        self.updateAB()                                        # compute A and B matrices from current params
+        if not self.birnn:
+            self.updateAB()                                        # compute A and B matrices from current params
         log_likelihood = tensor(0.0, device=self.device)       # accumulator for minibatch log_likelihood
         for m, sentence in tqdm(enumerate(corpus.draw_sentences_forever())):
             # Before we process the new sentence, we'll take stock of the preceding
@@ -346,7 +344,10 @@ class CRFModel(nn.Module):
                 length = sqrt(sum((x.grad*x.grad).sum().item() for x in self.parameters()))
                 logging.debug(f"Size of gradient vector: {length}")  # should approach 0 for large minibatch at local min
                 optimizer.step()               # SGD step
-                self.updateAB()                # update A and B matrices from new params
+                if self.birnn:
+                    self.RNN_update_AB(sentence, corpus)
+                else:
+                    self.updateAB()                # update A and B matrices from new params
                 # self.printAB()
                 log_likelihood = tensor(0.0, device=self.device)    # reset accumulator for next minibatch
 
