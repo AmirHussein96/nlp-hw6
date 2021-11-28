@@ -323,7 +323,10 @@ class CRFModel(nn.Module):
         old_dev_loss: Optional[float] = None    # we'll keep track of the dev loss here
 
         optimizer = torch.optim.SGD(self.parameters(), lr=lr)  # optimizer knows what the params are
-        if not self.birnn:
+        if self.birnn:
+            self.A = None
+            self.B = None
+        else:
             self.updateAB()                                    # compute A and B matrices from current params
         log_likelihood = tensor(0.0, device=self.device)       # accumulator for minibatch log_likelihood
         for m, sentence in tqdm(enumerate(corpus.draw_sentences_forever())):
@@ -335,7 +338,10 @@ class CRFModel(nn.Module):
 
             # m is the number of examples we've seen so far.
             # If we're at the end of a minibatch, do an update.
-            
+            if not self.A or not self.B:
+                s_len = len(sentence)
+                self.A = torch.rand((s_len, self.k, self.k))
+                self.B = torch.rand((s_len, self.k, self.k))
             if m % minibatch_size == 0 and m > 0:
                 #input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
