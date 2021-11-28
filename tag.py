@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 from eval import model_cross_entropy, model_error_rate, tagger_write_output
 from hmm import HiddenMarkovModel
+from crf import CRFModel
 from lexicon import build_lexicon
 from corpus import TaggedCorpus
 
@@ -29,6 +30,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         default=False,
         help="the newly created model (if no model was loaded) should be a CRF"
+    )
+    parser.add_argument(
+        "--birnn",
+        action="store_true",
+        default=False,
+        help="the loaded CRF model uses bi-RNN instead of traditional CRF"
     )
     parser.add_argument(
         "-u",
@@ -122,8 +129,7 @@ def main():
     logging.basicConfig(level=args.verbose)
     if args.model is not None:
         if args.crf:
-            #TODO load a trained crf model
-            raise NotImplementedError
+            model = CRFModel.load(Path(args.model))
         else:
             model = HiddenMarkovModel.load(Path(args.model))
         tagset = model.tagset
@@ -135,11 +141,11 @@ def main():
         tagset = train.tagset
         vocab = train.vocab
         if args.crf:
-            #TODO instantiate a new crf model, you should case on whether awesome tag is specified here
-            raise NotImplementedError
+            lexicon = build_lexicon(train, embeddings_file=Path(args.lexicon), log_counts=args.awesome, affixes=args.awesome)
+            model = CRFModel(tagset, vocab, lexicon, unigram=args.unigram, awesome=args.awesome, affixes=args.awesome)
         else:
             lexicon = build_lexicon(train, embeddings_file=Path(args.lexicon), log_counts=args.awesome)
-            model = HiddenMarkovModel(tagset, vocab, lexicon, unigram=args.unigram)
+            model = HiddenMarkovModel(tagset, vocab, lexicon, unigram=args.unigram, awesome=args.awesome, affixes=args.awesome)
 
     dev = TaggedCorpus(Path(args.eval), tagset=tagset, vocab=vocab)
     if args.train is not None:

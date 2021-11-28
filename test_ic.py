@@ -8,6 +8,7 @@ from typing import Callable
 from corpus import TaggedCorpus, sentence_str
 from eval import model_cross_entropy, tagger_write_output
 from hmm import HiddenMarkovModel
+from crf import CRFModel
 from lexicon import build_lexicon
 import torch
 import pdb
@@ -21,6 +22,9 @@ logging.info(f"Ice cream vocabulary: {list(icsup.vocab)}")
 logging.info(f"Ice cream tagset: {list(icsup.tagset)}")
 lexicon = build_lexicon(icsup, one_hot=True)   # one-hot lexicon: separate parameters for each word
 hmm = HiddenMarkovModel(icsup.tagset, icsup.vocab, lexicon)
+logging.info("Running on HMM Model")
+#hmm = CRFModel(icsup.tagset, icsup.vocab, lexicon) # not changing the name for convenience
+#logging.info("Running on CRF Model")
 
 logging.info("*** Current A, B matrices (computed by softmax from small random parameters)")
 hmm.updateAB()   # compute the matrices from the initial parameters (this would normally happen during training).

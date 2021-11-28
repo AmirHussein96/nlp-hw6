@@ -39,12 +39,13 @@ class HiddenMarkovModel(nn.Module):
                  tagset: Integerizer[Tag],
                  vocab: Integerizer[Word],
                  lexicon: Tensor,
-                 unigram=False): 
+                 unigram=False,
+                 awesome=False): 
         """Construct an HMM with initially random parameters, with the
         given tagset, vocabulary, and lexical features.
         
         Normally this is an ordinary first-order (bigram) HMM.  The unigram
-        flag says to fall back to a zeroth-order HMM, in which the different
+        flag says to fall back to a zeroth-order HMM, in which the diffesesssrent
         positions are generated independently.  (The code could be extended
         to support higher-order HMMs: trigram HMMs used to be popular.)"""
 
@@ -64,6 +65,7 @@ class HiddenMarkovModel(nn.Module):
         self.V = len(vocab) - 2    # number of word types (not counting EOS_WORD and BOS_WORD)
         self.d = lexicon.size(1)   # dimensionality of a word's embedding in attribute space
         self.unigram = unigram     # do we fall back to a unigram model?
+        self.awesome = awesome     # further improvements
 
         self.tagset = tagset
         self.vocab = vocab
@@ -123,7 +125,11 @@ class HiddenMarkovModel(nn.Module):
             x_finite = x[x.isfinite()]
             l2 = l2 + x_finite @ x_finite   # add ||x_finite||^2
         return l2
+<<<<<<< HEAD
 
+=======
+      
+>>>>>>> 57736606262dd4cc145391c79ed211fc67573550
     def params_L1(self) -> Tensor:
         """What's the L1 norm of the current parameter vector?
         We consider only the finite parameters."""
@@ -132,11 +138,15 @@ class HiddenMarkovModel(nn.Module):
             x_finite = x[x.isfinite()]
             l1 = l1 + torch.sum(torch.abs(x_finite))  # add ||x_finite||^1
         return l1
+<<<<<<< HEAD
 
+=======
+      
+>>>>>>> 57736606262dd4cc145391c79ed211fc67573550
     def updateAB(self) -> None:
         """Set the transition and emission matrices A and B, based on the current parameters.
         See the "Parametrization" section of the reading handout."""
-       # pdb.set_trace()
+        # pdb.set_trace()
         A = F.softmax(self._WA, dim=1)       # run softmax on params to get transition distributions
                                              # note that the BOS_TAG column will be 0, but each row will sum to 1
         if self.unigram:
@@ -209,19 +219,18 @@ class HiddenMarkovModel(nn.Module):
             wi, ti = sent[j]
             #pdb.set_trace()
             if ti == None:
-                x = alpha[j-1].reshape(-1,1) + torch.log(self.A )  
+                x = alpha[j-1].reshape(-1,1) + torch.log(self.A)  
                 alpha[j] = logsumexp_new(x + torch.log(self.B[:,wi].reshape(1,-1)), dim=0, keepdim=False, safe_inf=True) 
             else:
                 #alpha[j][0:2] =  torch.logsumexp(alpha[j-1].repeat(2,1).T + self.A[:,0:2] + self.B[:,sent[j][0]].repeat(2,1).T, 0)
                 x = alpha[j-1] + torch.log(self.A[:,ti]) 
-                alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]), dim=0, keepdim=False, safe_inf=True) 
+                alpha[j][ti] = logsumexp_new(x + torch.log(self.B[ti,wi]), dim=0, keepdim=False, safe_inf=True)
 
            # alpha[j] =  torch.logsumexp(alpha[j-1].repeat(4,1).T + torch.log(self.A[:,0:4]),0) + torch.log(self.B[:,sent[j][0]])
         #pdb.set_trace()  
         # handeling the last tag 
         alpha[-1][self.eos_t]= logsumexp_new(alpha[-2]+ self.A[:,self.eos_t],dim=0, keepdim=False, safe_inf=True)
         return alpha[-1][self.eos_t] # Z
-        #raise NotImplementedError   # you fill this in!
 
     def viterbi_tagging(self, sentence: Sentence, corpus: TaggedCorpus) -> Sentence:
         """Find the most probable tagging for the given sentence, according to the
@@ -237,34 +246,25 @@ class HiddenMarkovModel(nn.Module):
         backpointer=[torch.empty(self.k) for _ in sent]
         mu[0][self.bos_t]=0.  # handling the first 
         for j in range(1,len(sentence)-1):
-            # alpha[j+1] =  torch.matmul(alpha[j],self.A) * self.B[:,sent[j+1][0]]
             wi, ti = sent[j]
-            #pdb.set_trace()
             x = mu[j-1].reshape(-1,1) + torch.log(self.A)  
             max_mat = torch.max(x + torch.log(self.B[:,wi]).reshape(1,-1),0) 
-           # max_mat = torch.max(x + torch.unsqueeze(torch.log(self.B[:,wi]),0),0) 
             mu[j] = max_mat[0]   # alpha values
             backpointer[j] = max_mat[1]
-        # handeling the last tag
-        #pdb.set_trace()
         max_mat = torch.max(mu[-2].reshape(-1,1)+ torch.log(self.A), 0)
         mu[-1] = max_mat[0]
         backpointer[-1] = max_mat[1]
         prev_t = self.eos_t
-        #seq = deque([])
         seq = []
         for i in range(len(sentence)-1,-1,-1):
             word = self.vocab[sent[i][0]]
             tag = self.tagset[prev_t]
            
             prev_t = backpointer[i][prev_t]
-            #seq.appendleft((word,tag))
             seq.append((word,tag))
         seq.reverse()
         return list(seq)
             
-    
-
 
     def train(self, 
               corpus: TaggedCorpus,
@@ -324,7 +324,7 @@ class HiddenMarkovModel(nn.Module):
                 logging.debug(f"Size of gradient vector: {length}")  # should approach 0 for large minibatch at local min
                 optimizer.step()               # SGD step
                 self.updateAB()                # update A and B matrices from new params
-               # self.printAB()
+                # self.printAB()
                 log_likelihood = tensor(0.0, device=self.device)    # reset accumulator for next minibatch
 
             # If we're at the end of an eval batch, or at the start of training, evaluate.

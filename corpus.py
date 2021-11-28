@@ -18,6 +18,7 @@ from pathlib import Path
 ##### TYPE DEFINITIONS (USED FOR TYPE ANNOTATIONS)
 from typing import Counter, Iterable, Iterator, List, NewType, Optional, Tuple
 from more_itertools import peekable
+import torch
 
 from integerize import Integerizer
 
@@ -73,6 +74,12 @@ class TaggedCorpus:
 
         super().__init__()
         self.files = files
+        self.common = ["dis", "in", "im", "il", "ir", "un", "over", "mis", "out", "be", "co", "de", \
+                       "inter", "pre", "sub", "trans", "under", \
+                       "anti", "auto", "counter", "ex", "hyper", "mis", "sub",\
+                       "ed", "ing", "s", "es", "ly", "ness", "ise", "ence", "en"\
+                       "tion", "sion", "er", "er", "ment", "", "ant", "ent", "al", "ry", "ery",] 
+        # list of common suffixes and affixes
 
         # Read the corpus to harvest the tagset and vocabulary, if needed
         if tagset is None or vocab is None:
