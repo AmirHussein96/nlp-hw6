@@ -122,6 +122,7 @@ class CRFModel(nn.Module):
             self.M_prime = nn.Parameter(torch.rand((self.h_dim, 1 + self.h_dim + self.d)))
             self.UA = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + 2*self.k)))
             self.UB = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + 2*self.k)))
+            self.A = nn
 
     def params_L2(self) -> Tensor:
         """What's the L2 norm of the current parameter vector?
@@ -323,7 +324,7 @@ class CRFModel(nn.Module):
 
         optimizer = torch.optim.SGD(self.parameters(), lr=lr)  # optimizer knows what the params are
         if not self.birnn:
-            self.updateAB()                                        # compute A and B matrices from current params
+            self.updateAB()                                    # compute A and B matrices from current params
         log_likelihood = tensor(0.0, device=self.device)       # accumulator for minibatch log_likelihood
         for m, sentence in tqdm(enumerate(corpus.draw_sentences_forever())):
             # Before we process the new sentence, we'll take stock of the preceding
