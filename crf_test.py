@@ -183,7 +183,6 @@ class CRFModel(nn.Module):
 
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
-        print('LP!!!!!!!!!')
         return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
 
     def RNN_update_AB(self, sentence: Sentence, corpus: TaggedCorpus):
@@ -251,10 +250,11 @@ class CRFModel(nn.Module):
                 # for now, we simply assume either tags are all present or all absent
                 if ti == None:
                     x = alpha[j-1].reshape(-1,1) + self.A[j-1]
-                    alpha[j] = logsumexp_new(x + self.B[j-1,:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True)
+                    alpha[j] = logsumexp_new(x + self.B[j,:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True)
                 else:
                     x = alpha[j-1].reshape(-1) + self.A[j-1,:,ti]
-                    alpha[j][ti] = logsumexp_new(x + self.B[j-1,ti,wi], dim=0, keepdim=False, safe_inf=True)
+                    print(j, len(sentence), self.B.shape)
+                    alpha[j][ti] = logsumexp_new(x + self.B[j,ti,wi], dim=0, keepdim=False, safe_inf=True)
             else: 
                 if ti == None:
                     x = alpha[j-1].reshape(-1,1) + self.A # we put self.A into log space as well so we dont take log here
@@ -361,7 +361,8 @@ class CRFModel(nn.Module):
                 self.A = torch.rand((s_len+1, self.k, self.k))
                 self.B = torch.rand((s_len, self.k, self.V))
                 print('A B initialized', self.A.shape, self.B.shape)
-            if (not self.birnn and m % minibatch_size == 0 and m > 0) or (self.birnn):
+            if m % minibatch_size == 0 and m > 0:
+            #if (not self.birnn and m % minibatch_size == 0 and m > 0) or (self.birnn):
                 #input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 optimizer.zero_grad()          # backward pass will add to existing gradient, so zero it
@@ -391,7 +392,6 @@ class CRFModel(nn.Module):
                 
             # Finally, add likelihood of sentence m to the minibatch objective.
             log_likelihood = log_likelihood + self.log_prob(sentence, corpus)
-            print("done one cycle")
 
 
     def save(self, destination: Path) -> None:
