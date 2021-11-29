@@ -183,7 +183,7 @@ class CRFModel(nn.Module):
 
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
-
+        print('LP!!!!!!!!!')
         return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
 
     def RNN_update_AB(self, sentence: Sentence, corpus: TaggedCorpus):
@@ -371,9 +371,7 @@ class CRFModel(nn.Module):
                 logging.debug(f"Size of gradient vector: {length}")  # should approach 0 for large minibatch at local min
                 optimizer.step()               # SGD step
                 if self.birnn:
-                    print("<<<")
                     self.RNN_update_AB(sentence, corpus)
-                    print(">>>")
                 else:
                     self.updateAB()                # update A and B matrices from new params
                 # self.printAB()
@@ -384,7 +382,6 @@ class CRFModel(nn.Module):
                 with torch.no_grad():       # don't retain gradients during evaluation
                     dev_loss = loss(self)   # this will print its own log messages
                     
-                   
                 if old_dev_loss is not None and dev_loss >= old_dev_loss * (1-tolerance):
                # if old_dev_loss is not None and dev_loss >= old_dev_loss:
                     # we haven't gotten much better, so stop
@@ -394,6 +391,7 @@ class CRFModel(nn.Module):
                 
             # Finally, add likelihood of sentence m to the minibatch objective.
             log_likelihood = log_likelihood + self.log_prob(sentence, corpus)
+            print("done one cycle")
 
 
     def save(self, destination: Path) -> None:
