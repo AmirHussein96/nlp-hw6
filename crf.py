@@ -15,7 +15,10 @@ import torch
 from torch import Tensor, nn, tensor
 from torch.nn import functional as F
 from tqdm import tqdm
+import pdb
 #from scipy.special import logsumexp
+
+
 from corpus import (BOS_TAG, BOS_WORD, EOS_TAG, EOS_WORD, Sentence, Tag,
                     TaggedCorpus, Word, desupervise)
 from integerize import Integerizer
@@ -173,6 +176,7 @@ class CRFModel(nn.Module):
 
         When the logging level is set to DEBUG, the alpha and beta vectors and posterior counts
         are logged.  You can check this against the ice cream spreadsheet."""
+        pdb.set_trace()
         return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
 
     def log_forward(self, sentence: Sentence, corpus: TaggedCorpus) -> Tensor:
