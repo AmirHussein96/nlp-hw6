@@ -123,7 +123,6 @@ class CRFModel(nn.Module):
             self.M_prime = nn.Parameter(torch.rand((self.h_dim, 1 + self.h_dim + self.d)))
             self.UA = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + 2*self.k)))
             self.UB = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + self.k + self.d)))
-            self.A = nn
 
     def params_L2(self) -> Tensor:
         """What's the L2 norm of the current parameter vector?
@@ -202,7 +201,7 @@ class CRFModel(nn.Module):
 
         # get Fa and Fb, index seq: j, s, t
         Fa = torch.empty((s_len, self.k, self.k, self.f_dim)) # TODO: double check dim: s,t each has n-1 choice
-        Fb = torch.empty((s_len, self.k, self.k, self.f_dim))
+        Fb = torch.empty((s_len, self.k, self.V, self.f_dim))
         # update Fa
         Fa[:,:,:,:] += torch.sigmoid(self.UA[:, 0]) # add each of UA's first col to each layer k of Fa
         h1 = h[:s_len,:,:][:,None,None,:,:].expand(-1,self.k,self.k,-1,-1)
@@ -216,14 +215,14 @@ class CRFModel(nn.Module):
         
         # update Fb
         Fb[:,:,:,:] += torch.sigmoid(self.UB[:, 0])
-        h1 = h[1:,:,:][:,None,None,:,:].expand(-1,self.k,self.k,-1,-1) # TODO: check dimension/index
+        h1 = h[1:,:,:][:,None,None,:,:].expand(-1,self.k,self.V,-1,-1) # TODO: check dimension/index
         Fb[:,:,:,:] =  torch.sigmoid(torch.matmul(torch.squeeze(h1, 4), self.UB[:, 1:1+self.h_dim].t())) # h_{j-1}
-        # s, t become t, w here
         t_eye = torch.matmul(self.eye, self.UB[:, 1+self.h_dim:1+self.h_dim+self.k].t())
-        Fb[:,:,:,:] = torch.sigmoid(t_eye[None,:,None,:].expand(s_len,-1,self.k,-1))
-        w_eye = torch.matmul(self.eye, self.UB[:, 1+self.h_dim+self.k:1+self.h_dim+self.k*2].t())
+        Fb[:,:,:,:] = torch.sigmoid(t_eye[None,:,None,:].expand(s_len,-1,self.V,-1))
+        w_eye = torch.matmul(self._E, self.UB[:, 1+self.h_dim+self.k:1+self.h_dim+self.k+self.d].t()) # Vxd x dxf_dim
         Fb[:,:,:,:] = torch.sigmoid(w_eye[None,None,:,:].expand(s_len,self.k,-1,-1))
-        Fb[:,:,:,:] =  torch.sigmoid(torch.matmul(torch.squeeze(h2,4), self.UA[:, 1+self.h_dim+self.k*2:].t()))
+        h2 = h_prime[:-1,:,:][:,None,None,:,:].expand(-1,self.k,self.V,-1,-1) # TODO: check dimension/index
+        Fb[:,:,:,:] =  torch.sigmoid(torch.matmul(torch.squeeze(h2,4), self.UB[:, 1+self.h_dim+self.k+self.d:].t()))
 
         # update phi_A phi_B
         self.A = torch.squeeze(torch.matmul(Fa, self.ThetaA), 3) # size is s_len, self.k, self.k
@@ -245,6 +244,7 @@ class CRFModel(nn.Module):
         # a list of length n+2 so that we can assign directly to alpha[j].
         alpha = [-float("Inf")*torch.ones(self.k) for _ in sent] # very small values close to 0
         alpha[0][self.bos_t] = 0  # handling the first 
+        print("in log forward", self.A.shape, self.B.shape)
         for j in range(1,len(sentence)-1):
             wi, ti = sent[j]
             if self.birnn:
@@ -254,7 +254,7 @@ class CRFModel(nn.Module):
                     alpha[j] = logsumexp_new(x + self.B[j-1,:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True)
                 else:
                     x = alpha[j-1].reshape(-1) + self.A[j-1,:,ti]
-                    alpha[j][ti] = logsumexp_new(x + self.B[j-1,ti,:], dim=0, keepdim=False, safe_inf=True)
+                    alpha[j][ti] = logsumexp_new(x + self.B[j-1,ti,wi], dim=0, keepdim=False, safe_inf=True)
             else: 
                 if ti == None:
                     x = alpha[j-1].reshape(-1,1) + self.A # we put self.A into log space as well so we dont take log here
@@ -355,10 +355,12 @@ class CRFModel(nn.Module):
 
             # m is the number of examples we've seen so far.
             # If we're at the end of a minibatch, do an update.
-            if not self.A or not self.B:
+            print("sentence")
+            if self.birnn:
                 s_len = len(sentence)
                 self.A = torch.rand((s_len+1, self.k, self.k))
                 self.B = torch.rand((s_len, self.k, self.V))
+                print('A B initialized', self.A.shape, self.B.shape)
             if (not self.birnn and m % minibatch_size == 0 and m > 0) or (self.birnn):
                 #input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
@@ -369,7 +371,9 @@ class CRFModel(nn.Module):
                 logging.debug(f"Size of gradient vector: {length}")  # should approach 0 for large minibatch at local min
                 optimizer.step()               # SGD step
                 if self.birnn:
+                    print("<<<")
                     self.RNN_update_AB(sentence, corpus)
+                    print(">>>")
                 else:
                     self.updateAB()                # update A and B matrices from new params
                 # self.printAB()
