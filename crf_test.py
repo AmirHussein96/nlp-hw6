@@ -67,6 +67,7 @@ class CRFModel(nn.Module):
         self.tagset = tagset
         self.vocab = vocab
         self._E = lexicon[:-2]  # embedding matrix; omits rows for EOS_WORD and BOS_WORD
+        self.__E = lexicon
 
         # Useful constants that are invoked in the methods
         self.bos_t: Optional[int] = tagset.index(BOS_TAG)
@@ -121,7 +122,7 @@ class CRFModel(nn.Module):
             self.M = nn.Parameter(torch.rand((self.h_dim, 1 + self.h_dim + self.d)))
             self.M_prime = nn.Parameter(torch.rand((self.h_dim, 1 + self.h_dim + self.d)))
             self.UA = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + 2*self.k)))
-            self.UB = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + 2*self.k)))
+            self.UB = nn.Parameter(torch.rand((self.f_dim, 1 + 2*self.h_dim + self.k + self.d)))
             self.A = nn
 
     def params_L2(self) -> Tensor:
@@ -165,7 +166,7 @@ class CRFModel(nn.Module):
         print("Transition matrix A:")
         col_headers = [""] + [self.tagset[t] for t in range(self.A.size(1))]
         print("\t".join(col_headers))
-        for s in range(self.A.size(0)):   # rows
+        for s in range(self.A.shape[0]):   # rows
             row = [self.tagset[s]] + [f"{self.A[s,t]:.3f}" for t in range(self.A.size(1))]
             print("\t".join(row))
         print("\nEmission matrix B:")        
@@ -187,42 +188,46 @@ class CRFModel(nn.Module):
         return self.log_forward(sentence, corpus) - self.log_forward(desupervise(sentence), corpus)
 
     def RNN_update_AB(self, sentence: Sentence, corpus: TaggedCorpus):
-        words = sentence.split(" ")
-        s_len = len(words)
+        s_len = len(sentence)
+        words = [item[0] for item in sentence]
         # get h and h_prime
-        h = torch.zeros((s_len + 1, self.M.size[0], 1)) # each h[j] is for sigmoid of an index j
-        h_prime = torch.zeros((s_len + 1, self.M.size[0], 1))
+        h = torch.zeros((s_len + 1, self.M.shape[0], 1)) # each h[j] is for sigmoid of an index j
+        h_prime = torch.zeros((s_len + 1, self.M.shape[0], 1))
         # h_-1 and h'_{n+1} are both zero-tensors, since no info before BOS and after EOS
-        for i in range(1, s_len+1):
-            h[i] = torch.sigmoid(torch.matmul(self.M, h[i-1]))
-            h_prime[-(i+1)] = torch.sigmoid(torch.matmul(self.M_prime, h[-i]))
+        for i in range(1, s_len):
+            concat1 = torch.cat((torch.tensor([[1]]), h[i-1], self.__E[self.vocab.index(sentence[i][0])].t().reshape(-1,1)), dim=0)
+            concat2 = torch.cat((torch.tensor([[1]]), self.__E[self.vocab.index(sentence[i][0])].t().reshape(-1,1), h[-i]), dim=0)
+            h[i] = torch.sigmoid(torch.matmul(self.M, concat1))
+            h_prime[-(i+1)] = torch.sigmoid(torch.matmul(self.M_prime, concat2))
 
         # get Fa and Fb, index seq: j, s, t
-        Fa = torch.empty((s_len, s_len-1, s_len-1, self.f_dim)) # TODO: double check dim: s,t each has n-1 choice
-        Fb = torch.empty((s_len, s_len-1, s_len-1, self.f_dim))
+        Fa = torch.empty((s_len, self.k, self.k, self.f_dim)) # TODO: double check dim: s,t each has n-1 choice
+        Fb = torch.empty((s_len, self.k, self.k, self.f_dim))
         # update Fa
-        Fa[:,:,:,0] = torch.sum(self.UA[:, 0]) # add each of UA's first col to each layer k of Fa
-        Fa[:,:,:,1:1+self.f_dim] = torch.matmul(self.UA[:, 1:1+self.h_dim], h[:s_len,:,:]) # h_{j-2}
-        s_eye = torch.cat([self.eye[corpus.tagset.index(i)] for i in words[:-1]], dim=0) # TODO: check dimension
-        t_eye = torch.cat([self.eye[corpus.tagset.index(i)] for i in words[1:]], dim=0)
-        Fa[:,:,:,1+self.f_dim:1+self.f_dim+self.k] = torch.matmul(self.UA[:, 1+self.f_dim:1+self.f_dim+self.k],s_eye)
-        Fa[:,:,:,1+self.f_dim+self.k:1+self.f_dim+self.k*2] = torch.matmul(self.UA[:, 1+self.f_dim+self.k:1+self.f_dim+self.k*2], t_eye)
-        Fa[:,:,:,1+self.f_dim+self.k*2:] = torch.matmul(self.UA[1+self.f_dim+self.k*2:], h_prime[:-1,:,:])
+        Fa[:,:,:,:] += torch.sigmoid(self.UA[:, 0]) # add each of UA's first col to each layer k of Fa
+        h1 = h[:s_len,:,:][:,None,None,:,:].expand(-1,self.k,self.k,-1,-1)
+        Fa[:,:,:,:] += torch.sigmoid(torch.matmul(torch.squeeze(h1, 4), self.UA[:, 1:1+self.h_dim].t())) # h_{j-2}
+        s_eye = torch.matmul(self.eye, self.UA[:, 1+self.h_dim:1+self.h_dim+self.k].t())
+        Fa[:,:,:,:] += torch.sigmoid(s_eye[None,:,None,:].expand(s_len,-1,self.k,-1))
+        t_eye = torch.matmul(self.eye, self.UA[:, 1+self.h_dim+self.k:1+self.h_dim+self.k*2].t())
+        Fa[:,:,:,:] += torch.sigmoid(t_eye[None,None,:,:].expand(s_len,self.k,-1,-1))
+        h2 = h_prime[:-1,:,:][:,None,None,:,:].expand(-1,self.k,self.k,-1,-1) # TODO: check dimension/index
+        Fa[:,:,:,:] += torch.sigmoid(torch.matmul(torch.squeeze(h2,4), self.UA[:, 1+self.h_dim+self.k*2:].t()))
+        
         # update Fb
-        Fb[:,:,:,0] = torch.sum(self.UB[:, 0]) # add each of UA's first col to each layer k of Fa
-        Fb[:,:,:,1:1+self.f_dim] = torch.matmul(self.UB[:, 1:1+self.h_dim], h[1:s_len+1,:,:]) # h_{j-2}
-        t_eye = torch.cat([self.eye[corpus.tagset.index(i)] for i in words[:-1]], dim=0)
-        w_eye = torch.cat([self.eye[corpus.tagset.index(i)] for i in words[1:]], dim=0)
-        Fb[:,:,:,1+self.f_dim:1+self.f_dim+self.k] = torch.matmul(self.UB[:, 1+self.f_dim:1+self.f_dim+self.k],t_eye)
-        Fb[:,:,:,1+self.f_dim+self.k:1+self.f_dim+self.k*2] = torch.matmul(self.UB[:, 1+self.f_dim+self.k:1+self.f_dim+self.k*2], w_eye)
-        Fb[:,:,:,1+self.f_dim+self.k*2:] = torch.matmul(self.UA[1+self.f_dim+self.k*2:], h_prime[1:,:,:])
+        Fb[:,:,:,:] += torch.sigmoid(self.UB[:, 0])
+        h1 = h[1:,:,:][:,None,None,:,:].expand(-1,self.k,self.k,-1,-1) # TODO: check dimension/index
+        Fb[:,:,:,:] =  torch.sigmoid(torch.matmul(torch.squeeze(h1, 4), self.UB[:, 1:1+self.h_dim].t())) # h_{j-1}
+        # s, t become t, w here
+        t_eye = torch.matmul(self.eye, self.UB[:, 1+self.h_dim:1+self.h_dim+self.k].t())
+        Fb[:,:,:,:] = torch.sigmoid(t_eye[None,:,None,:].expand(s_len,-1,self.k,-1))
+        w_eye = torch.matmul(self.eye, self.UB[:, 1+self.h_dim+self.k:1+self.h_dim+self.k*2].t())
+        Fb[:,:,:,:] = torch.sigmoid(w_eye[None,None,:,:].expand(s_len,self.k,-1,-1))
+        Fb[:,:,:,:] =  torch.sigmoid(torch.matmul(torch.squeeze(h2,4), self.UA[:, 1+self.h_dim+self.k*2:].t()))
 
         # update phi_A phi_B
-        self.A = tensor.matmul(self.ThetaA, Fa) # TODO: check dimensions
-        self.B = tensor.matmul(self.ThetaB, Fb)
-
-        # TODO: calculate probability from phi
-        return 0
+        self.A = torch.squeeze(torch.matmul(Fa, self.ThetaA), 3) # size is s_len, self.k, self.k
+        self.B = torch.squeeze(torch.matmul(Fb, self.ThetaB), 3)
 
     def log_forward(self, sentence: Sentence, corpus: TaggedCorpus) -> Tensor:
         """Run the forward algorithm from the handout on a tagged, untagged, 
@@ -242,15 +247,27 @@ class CRFModel(nn.Module):
         alpha[0][self.bos_t] = 0  # handling the first 
         for j in range(1,len(sentence)-1):
             wi, ti = sent[j]
-            if ti == None:
-                x = alpha[j-1].reshape(-1,1) + self.A # we put self.A into log space as well so we dont take log here
-                alpha[j] = logsumexp_new(x + self.B[:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True) # same. B is in log space
-            else:
-                x = alpha[j-1] + self.A[:,ti]
-                alpha[j][ti] = logsumexp_new(x + self.B[ti,wi], dim=0, keepdim=False, safe_inf=True)
+            if self.birnn:
+                # for now, we simply assume either tags are all present or all absent
+                if ti == None:
+                    x = alpha[j-1].reshape(-1,1) + self.A[j-1]
+                    alpha[j] = logsumexp_new(x + self.B[j-1,:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True)
+                else:
+                    x = alpha[j-1].reshape(-1) + self.A[j-1,:,ti]
+                    alpha[j][ti] = logsumexp_new(x + self.B[j-1,ti,:], dim=0, keepdim=False, safe_inf=True)
+            else: 
+                if ti == None:
+                    x = alpha[j-1].reshape(-1,1) + self.A # we put self.A into log space as well so we dont take log here
+                    alpha[j] = logsumexp_new(x + self.B[:,wi].reshape(1,-1), dim=0, keepdim=False, safe_inf=True) # same. B is in log space
+                else:
+                    x = alpha[j-1] + self.A[:,ti]
+                    alpha[j][ti] = logsumexp_new(x + self.B[ti,wi], dim=0, keepdim=False, safe_inf=True)
 
         # handeling the last tag 
-        alpha[-1][self.eos_t]= logsumexp_new(alpha[-2]+ self.A[:,self.eos_t],dim=0, keepdim=False, safe_inf=True)
+        if self.birnn:
+             alpha[-1][self.eos_t]= logsumexp_new(alpha[-2]+ self.A[-1,:,self.eos_t],dim=0, keepdim=False, safe_inf=True)
+        else:
+            alpha[-1][self.eos_t]= logsumexp_new(alpha[-2]+ self.A[:,self.eos_t],dim=0, keepdim=False, safe_inf=True)
         return alpha[-1][self.eos_t] # Z
 
     def viterbi_tagging(self, sentence: Sentence, corpus: TaggedCorpus) -> Sentence:
@@ -340,9 +357,9 @@ class CRFModel(nn.Module):
             # If we're at the end of a minibatch, do an update.
             if not self.A or not self.B:
                 s_len = len(sentence)
-                self.A = torch.rand((s_len, self.k, self.k))
-                self.B = torch.rand((s_len, self.k, self.k))
-            if m % minibatch_size == 0 and m > 0:
+                self.A = torch.rand((s_len+1, self.k, self.k))
+                self.B = torch.rand((s_len, self.k, self.V))
+            if (not self.birnn and m % minibatch_size == 0 and m > 0) or (self.birnn):
                 #input(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 logging.debug(f"Training log-likelihood per example: {log_likelihood.item()/minibatch_size:.3f} nats")
                 optimizer.zero_grad()          # backward pass will add to existing gradient, so zero it
